@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ElementType, type ReactNode, type Ref } from "react";
 import { cn } from "@/lib/utils";
 
 export function Reveal({
@@ -38,14 +38,15 @@ export function Reveal({
     return () => io.disconnect();
   }, []);
 
+  const Component = Tag as ElementType;
+
   return (
-    <Tag
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ref={ref as any}
+    <Component
+      ref={ref as Ref<HTMLElement>}
       className={cn("reveal", className)}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
     >
       {children}
-    </Tag>
+    </Component>
   );
 }
