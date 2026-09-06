@@ -1,0 +1,23 @@
+# зависимости
+node_modules/
+
+# сборка
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# переменные окружения (реальные пароли не коммитим)
+.env
+.env.local
+.env.*.local
+
+# логи и прочее
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+.idea/
+.vscode/
+coverage/
+tmp/

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { Category } from "@/db/schema";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +19,8 @@ export function CatalogFilters({ categories, total }: { categories: Category[]; 
   const current = sp.get("category") ?? "";
   const sort = sp.get("sort") ?? "popular";
   const featured = sp.get("featured") === "1";
-  const [q, setQ] = useState(sp.get("q") ?? "");
-
-  useEffect(() => setQ(sp.get("q") ?? ""), [sp]);
+  const urlQ = sp.get("q") ?? "";
+  const [q, setQ] = useState(urlQ);
 
   const update = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(sp.toString());
@@ -61,7 +60,8 @@ export function CatalogFilters({ categories, total }: { categories: Category[]; 
             <path d="m20 20-3.5-3.5" />
           </svg>
           <input
-            value={q}
+            key={urlQ}
+            defaultValue={urlQ}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Поиск по фигуркам"
             className="h-12 flex-1 bg-transparent text-base outline-none placeholder:text-muted"
