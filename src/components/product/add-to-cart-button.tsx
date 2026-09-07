@@ -11,17 +11,20 @@ export function AddToCartButton({
   quantity = 1,
   compact = false,
   className,
+  variantName,
 }: {
   product: ProductWithRelations;
   quantity?: number;
   compact?: boolean;
   className?: string;
+  variantName?: string;
 }) {
   const { addItem, items } = useCart();
   const [pulse, setPulse] = useState(false);
   const soldOut = product.stock <= 0 || !product.isAvailable;
-  const inCart = items.find((i) => i.productId === product.id)?.quantity ?? 0;
-  const limitReached = product.stock > 0 && inCart >= product.stock;
+  const inCart = items.find((i) => i.productId === product.id && i.variantName === variantName)?.quantity ?? 0;
+  const totalProductInCart = items.filter((i) => i.productId === product.id).reduce((sum, i) => sum + i.quantity, 0);
+  const limitReached = product.stock > 0 && totalProductInCart >= product.stock;
 
   const handle = () => {
     if (soldOut || limitReached) return;
@@ -34,6 +37,7 @@ export function AddToCartButton({
         imageUrl: getMainImage(product)?.url ?? null,
         category: product.category?.name ?? null,
         stock: product.stock,
+        variantName,
       },
       quantity
     );
