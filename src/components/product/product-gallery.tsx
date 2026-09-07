@@ -20,19 +20,10 @@ export function ProductGallery({ images, name }: { images: ProductImage[]; name:
       if (!next.length) return;
       setVisible(next);
       setActive(0);
-      requestAnimationFrame(() => track.current?.scrollTo({ left: 0 }));
     };
     window.addEventListener("product-color-images", onColor);
     return () => window.removeEventListener("product-color-images", onColor);
   }, [images]);
-
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const onScroll = () => setActive(Math.round(el.scrollLeft / el.clientWidth));
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [visible]);
 
   const go = (i: number) => {
     setActive(i);
@@ -44,20 +35,26 @@ export function ProductGallery({ images, name }: { images: ProductImage[]; name:
   return (
     <div className="md:sticky md:top-24 w-full max-w-full">
       <div className="relative aspect-square w-full overflow-hidden rounded-3xl bg-bg2 ring-1 ring-line/60">
-        <div ref={track} className="absolute inset-0 flex snap-x snap-mandatory overflow-x-auto no-scrollbar" style={{ scrollbarWidth: "none" }}>
+        <div ref={track} className="absolute inset-0 flex snap-x snap-mandatory overflow-x-auto no-scrollbar">
           {visible.map((img, i) => (
             <div key={img.id} className="relative aspect-square w-full shrink-0 snap-start">
-              <Image src={img.url} alt={img.alt || `${name} — ${IMAGE_KIND_LABELS[img.kind]}`} fill priority={i === 0} loading={i === 0 ? "eager" : "lazy"} sizes="(max-width: 768px) 100vw, 55vw" className="object-cover" />
+              <Image src={img.url} alt={img.alt || `${name} — ${IMAGE_KIND_LABELS[img.kind]}`} fill priority={i === 0} className="object-cover" sizes="(max-width: 768px) 100vw, 55vw" />
             </div>
           ))}
         </div>
-        {visible.length > 1 && <>
-          <div className="absolute left-3 top-3 rounded-full bg-bg/70 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-fg backdrop-blur">{IMAGE_KIND_LABELS[visible[active]?.kind ?? "main"]}</div>
-          <button type="button" onClick={() => go((active - 1 + visible.length) % visible.length)} className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-bg/70 text-fg backdrop-blur md:flex">←</button>
-          <button type="button" onClick={() => go((active + 1) % visible.length)} className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-bg/70 text-fg backdrop-blur md:flex">→</button>
-        </>}
       </div>
-      {visible.length > 1 && <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">{visible.map((img, i) => <button key={img.id} type="button" onClick={() => go(i)} className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-xl ring-2 sm:h-20 sm:w-20", i === active ? "ring-green" : "ring-transparent opacity-60")}><Image src={img.url} alt="" fill sizes="80px" className="object-cover" /></button>)}</div>}
+
+      {visible.length > 1 && (
+        <div className="mt-3 h-20 overflow-hidden">
+          <div className="flex h-20 gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {visible.map((img, i) => (
+              <button key={img.id} type="button" onClick={() => go(i)} className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-xl ring-2 sm:h-20 sm:w-20", i === active ? "ring-green" : "ring-transparent opacity-60")}>
+                <Image src={img.url} alt="" fill sizes="80px" className="object-cover" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
