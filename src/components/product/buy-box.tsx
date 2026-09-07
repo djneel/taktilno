@@ -6,23 +6,15 @@ import { getMainImage } from "@/lib/images";
 import { AddToCartButton } from "./add-to-cart-button";
 
 const SPHINX_COLORS = [
-  { name: "Серый", value: "#8b8b8b", imageKeywords: ["серый", "grey", "gray"] },
-  { name: "Коричневый", value: "#8b5e3c", imageKeywords: ["коричневый", "brown"] },
-  { name: "Чёрный", value: "#1f1f1f", imageKeywords: ["чёрный", "черный", "black"] },
-  { name: "Сине-фиолетовый", value: "#5546a8", imageKeywords: ["сине-фиолетовый", "синий", "фиолетовый", "blue", "purple"] },
+  { name: "Серый", value: "#8b8b8b" },
+  { name: "Коричневый", value: "#8b5e3c" },
+  { name: "Чёрный", value: "#1f1f1f" },
+  { name: "Сине-фиолетовый", value: "#5546a8" },
 ] as const;
 
 function getColorImage(product: ProductWithRelations, colorName: string) {
-  const color = SPHINX_COLORS.find((c) => c.name === colorName);
-  if (!color) return getMainImage(product)?.url ?? null;
-  const images = [...product.images].sort((a, b) => {
-    if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-  });
-  const match = images.find((image) => {
-    const haystack = `${image.url} ${image.alt ?? ""}`.toLowerCase();
-    return color.imageKeywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
-  });
+  const images = [...product.images].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const match = images.find((image) => image.colorVariant === colorName);
   return match?.url ?? getMainImage(product)?.url ?? null;
 }
 
