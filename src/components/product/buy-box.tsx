@@ -13,9 +13,12 @@ const SPHINX_COLORS = [
 ] as const;
 
 function getColorImages(product: ProductWithRelations, colorName: string) {
-  const color = SPHINX_COLORS.find((c) => c.name === colorName);
-  if (!color) return product.images;
   const images = [...product.images].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const assigned = images.filter((image) => image.colorVariant === colorName);
+  if (assigned.length) return assigned;
+
+  const color = SPHINX_COLORS.find((c) => c.name === colorName);
+  if (!color) return images;
   const matches = images.filter((image) => {
     const haystack = `${image.url} ${image.alt ?? ""}`.toLowerCase();
     return color.imageKeywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
@@ -54,7 +57,6 @@ export function BuyBox({ product }: { product: ProductWithRelations }) {
         })}
       </div>
     </div>}
-
     <div className="flex items-center gap-3">
       <div className="flex h-14 items-center rounded-full bg-card ring-1 ring-line/60">
         <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={soldOut || qty <= 1} className="flex h-14 w-14 items-center justify-center text-xl disabled:text-line" aria-label="Уменьшить">−</button>
