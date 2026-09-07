@@ -40,7 +40,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, variantName: i.variantName })),
         }),
       });
       const data = await res.json();
@@ -124,12 +124,13 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
       <aside className="rounded-3xl bg-card p-5 ring-1 ring-line/60 sm:p-6 md:sticky md:top-24">
         <ul className="space-y-3">
           {items.map((it) => (
-            <li key={it.productId} className="flex items-center gap-3">
+            <li key={`${it.productId}-${it.variantName ?? "default"}`} className="flex items-center gap-3">
               <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-bg2">
                 {it.imageUrl && <Image src={it.imageUrl} alt="" fill sizes="56px" className="object-cover" />}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold">{it.name}</div>
+                {it.variantName && <div className="text-xs text-muted">Цвет: {it.variantName}</div>}
                 <div className="text-xs text-muted">{it.quantity} × {formatPrice(it.price)}</div>
               </div>
               <div className="text-sm font-bold">{formatPrice(it.price * it.quantity)}</div>

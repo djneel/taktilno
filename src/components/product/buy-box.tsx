@@ -4,13 +4,51 @@ import { useState } from "react";
 import type { ProductWithRelations } from "@/lib/data";
 import { AddToCartButton } from "./add-to-cart-button";
 
+const SPHINX_COLORS = [
+  { name: "Серый", value: "#8b8b8b" },
+  { name: "Коричневый", value: "#8b5e3c" },
+  { name: "Чёрный", value: "#1f1f1f" },
+  { name: "Сине-фиолетовый", value: "#5546a8" },
+] as const;
+
 export function BuyBox({ product }: { product: ProductWithRelations }) {
   const [qty, setQty] = useState(1);
+  const isSphinx = product.slug === "kot-sfinks" || product.name.toLowerCase().includes("кот-сфинкс");
+  const [selectedColor, setSelectedColor] = useState<string>(SPHINX_COLORS[0].name);
   const max = Math.max(1, Math.min(product.stock, 99));
   const soldOut = product.stock <= 0 || !product.isAvailable;
 
   return (
     <div className="space-y-4">
+      {isSphinx && (
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Цвет</div>
+          <div className="flex flex-wrap gap-2">
+            {SPHINX_COLORS.map((color) => {
+              const selected = selectedColor === color.name;
+              return (
+                <button
+                  key={color.name}
+                  type="button"
+                  onClick={() => setSelectedColor(color.name)}
+                  aria-pressed={selected}
+                  className={`inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold ring-1 transition-all ${
+                    selected ? "bg-bg2 ring-green" : "bg-bg2/40 ring-line/60 hover:ring-line"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 rounded-full ring-1 ring-white/20"
+                    style={{ backgroundColor: color.value }}
+                  />
+                  {color.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <div className="flex h-14 items-center rounded-full bg-card ring-1 ring-line/60">
           <button
@@ -34,7 +72,11 @@ export function BuyBox({ product }: { product: ProductWithRelations }) {
           </button>
         </div>
         <div className="flex-1">
-          <AddToCartButton product={product} quantity={qty} />
+          <AddToCartButton
+            product={product}
+            quantity={qty}
+            variantName={isSphinx ? selectedColor : undefined}
+          />
         </div>
       </div>
       <p className="text-xs text-muted">

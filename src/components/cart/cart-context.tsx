@@ -20,14 +20,15 @@ export type CartItem = {
   category: string | null;
   quantity: number;
   stock: number;
+  variantName?: string;
 };
 
 type CartState = {
   items: CartItem[];
   hydrated: boolean;
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
-  removeItem: (productId: number) => void;
-  setQuantity: (productId: number, quantity: number) => void;
+  removeItem: (productId: number, variantName?: string) => void;
+  setQuantity: (productId: number, quantity: number, variantName?: string) => void;
   clear: () => void;
   count: number;
   subtotal: number;
@@ -37,8 +38,6 @@ type CartState = {
 
 const CartContext = createContext<CartState | null>(null);
 const STORAGE_KEY = "taktilno_cart_v1";
-
-/* ---------- Мини-хранилище корзины (localStorage как внешний источник) ---------- */
 
 const EMPTY: CartItem[] = [];
 let snapshot: CartItem[] = EMPTY;
@@ -54,8 +53,6 @@ function readStoredCart(): CartItem[] {
   }
 }
 
-// На клиенте читаем корзину один раз при инициализации модуля —
-// до первого рендера, поэтому useSyncExternalStore не даёт рассинхрона гидрации.
 if (typeof window !== "undefined") {
   snapshot = readStoredCart();
 }
@@ -83,13 +80,16 @@ function emit(next: CartItem[]) {
   listeners.forEach((l) => l());
 }
 
-/** true только на клиенте после гидрации (без setState в эффекте) */
 function useHydrated() {
   return useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
+}
+
+function sameItem(a: CartItem, productId: number, variantName?: string) {
+  return a.productId === productId && a.variantName === variantName;
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
@@ -104,11 +104,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [lastAdded]);
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">, quantity = 1) => {
-    const existing = snapshot.find((i) => i.productId === item.productId);
+    const existing = snapshot.find((i) => sameItem(i, item.productId, item.variantName));
     const max = item.stock > 0 ? item.stock : 99;
     const next = existing
       ? snapshot.map((i) =>
-          i.productId === item.productId
+          sameItem(i, item.productId, item.variantName)
             ? { ...i, ...item, quantity: Math.min(max, i.quantity + quantity) }
             : i
         )
@@ -117,15 +117,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLastAdded({ ...item, quantity });
   }, []);
 
-  const removeItem = useCallback((productId: number) => {
-    emit(snapshot.filter((i) => i.productId !== productId));
+  const removeItem = useCallback((productId: number, variantName?: string) => {
+    emit(snapshot.filter((i) => !sameItem(i, productId, variantName)));
   }, []);
 
-  const setQuantity = useCallback((productId: number, quantity: number) => {
+  const setQuantity = useCallback((productId: number, quantity: number, variantName?: string) => {
     emit(
       snapshot
         .map((i) =>
-          i.productId === productId
+          sameItem(i, productId, variantName)
             ? { ...i, quantity: Math.max(0, Math.min(i.stock > 0 ? i.stock : 99, quantity)) }
             : i
         )
