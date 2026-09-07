@@ -28,7 +28,7 @@ export function CartView() {
     <div className="mt-8 grid gap-8 md:grid-cols-[1fr_340px] md:items-start">
       <ul className="divide-y divide-line rounded-3xl bg-card ring-1 ring-line/60">
         {items.map((it) => (
-          <li key={it.productId} className="flex gap-4 p-4 sm:p-5">
+          <li key={`${it.productId}-${it.variantName ?? "default"}`} className="flex gap-4 p-4 sm:p-5">
             <Link href={`/product/${it.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-bg2 sm:h-28 sm:w-28">
               {it.imageUrl && <Image src={it.imageUrl} alt={it.name} fill sizes="112px" className="object-cover" />}
             </Link>
@@ -41,11 +41,12 @@ export function CartView() {
                   <Link href={`/product/${it.slug}`} className="block truncate text-base font-bold sm:text-lg">
                     {it.name}
                   </Link>
+                  {it.variantName && <div className="mt-0.5 text-sm text-muted">Цвет: {it.variantName}</div>}
                   <div className="mt-0.5 text-sm text-muted">{formatPrice(it.price)} / шт.</div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => removeItem(it.productId)}
+                  onClick={() => removeItem(it.productId, it.variantName)}
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-bg2 hover:text-fg"
                   aria-label={`Удалить ${it.name}`}
                 >
@@ -56,13 +57,13 @@ export function CartView() {
               </div>
               <div className="mt-auto flex items-center justify-between gap-3 pt-3">
                 <div className="flex h-11 items-center rounded-full bg-bg2 ring-1 ring-line/60">
-                  <button type="button" onClick={() => setQuantity(it.productId, it.quantity - 1)} className="flex h-11 w-11 items-center justify-center text-lg" aria-label="Уменьшить">
+                  <button type="button" onClick={() => setQuantity(it.productId, it.quantity - 1, it.variantName)} className="flex h-11 w-11 items-center justify-center text-lg" aria-label="Уменьшить">
                     −
                   </button>
                   <span className="w-7 text-center text-sm font-bold tabular-nums">{it.quantity}</span>
                   <button
                     type="button"
-                    onClick={() => setQuantity(it.productId, it.quantity + 1)}
+                    onClick={() => setQuantity(it.productId, it.quantity + 1, it.variantName)}
                     disabled={it.stock > 0 && it.quantity >= it.stock}
                     className="flex h-11 w-11 items-center justify-center text-lg disabled:text-line"
                     aria-label="Увеличить"
