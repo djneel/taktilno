@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ProductWithRelations } from "@/lib/data";
 import { getMainImage } from "@/lib/images";
 import { AddToCartButton } from "./add-to-cart-button";
+import { sortImages } from "@/lib/images";
 
 const SPHINX_COLORS = [
   { name: "Серый", value: "#8b8b8b", imageKeywords: ["серый", "grey", "gray"] },
@@ -16,10 +17,7 @@ function getColorImage(product: ProductWithRelations, colorName: string) {
   const color = SPHINX_COLORS.find((c) => c.name === colorName);
   if (!color) return getMainImage(product)?.url ?? null;
 
-  const images = [...product.images].sort(
-    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
-  );
-
+  const images = sortImages(product.images);
   const match = images.find((image) => {
     const haystack = `${image.url} ${image.alt ?? ""}`.toLowerCase();
     return color.imageKeywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
