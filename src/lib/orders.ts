@@ -14,7 +14,7 @@ export type CheckoutInput = {
   deliveryMethod: string;
   address: string;
   comment?: string;
-  items: { productId: number; quantity: number }[];
+  items: { productId: number; quantity: number; variantName?: string }[];
 };
 
 export class CheckoutError extends Error {}
@@ -51,7 +51,8 @@ export async function createOrder(input: CheckoutInput) {
       const p = dbProducts.find((d) => d.id === Number(i.productId));
       if (!p) return null;
       const quantity = Math.max(1, Math.min(99, Math.floor(Number(i.quantity) || 1)));
-      return { product: p, quantity };
+      const variantName = typeof i.variantName === "string" ? i.variantName.trim() : "";
+      return { product: p, quantity, variantName };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
 
@@ -100,7 +101,7 @@ export async function createOrder(input: CheckoutInput) {
       lines.map((l) => ({
         orderId: order.id,
         productId: l.product.id,
-        name: l.product.name,
+        name: l.variantName ? `${l.product.name} — ${l.variantName}` : l.product.name,
         slug: l.product.slug,
         price: l.product.price,
         quantity: l.quantity,
