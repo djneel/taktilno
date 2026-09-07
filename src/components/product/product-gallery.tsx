@@ -33,12 +33,12 @@ export function ProductGallery({ images, name }: { images: ProductImage[]; name:
   if (!visible.length) return <div className="aspect-square flex items-center justify-center rounded-3xl bg-card text-muted">Фотографии скоро появятся</div>;
 
   return (
-    <div className="md:sticky md:top-24 w-full max-w-full">
-      <div className="relative aspect-square w-full overflow-hidden rounded-3xl bg-bg2 ring-1 ring-line/60">
+    <div className="md:sticky md:top-24 w-full max-w-full min-h-0">
+      <div className="relative aspect-square w-full max-w-full overflow-hidden rounded-3xl bg-bg2 ring-1 ring-line/60">
         <div ref={track} className="absolute inset-0 flex snap-x snap-mandatory overflow-x-auto no-scrollbar">
           {visible.map((img, i) => (
-            <div key={img.id} className="relative aspect-square w-full shrink-0 snap-start">
-              <Image src={img.url} alt={img.alt || `${name} — ${IMAGE_KIND_LABELS[img.kind]}`} fill priority={i === 0} className="object-cover" sizes="(max-width: 768px) 100vw, 55vw" />
+            <div key={img.id} className="relative aspect-square w-full min-w-full shrink-0 snap-start">
+              <Image src={img.url} alt={img.alt || `${name} — ${IMAGE_KIND_LABELS[img.kind]}`} fill priority={i === 0} className="object-contain" sizes="(max-width: 768px) 100vw, 55vw" />
             </div>
           ))}
         </div>
