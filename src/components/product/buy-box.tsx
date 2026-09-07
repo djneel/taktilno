@@ -13,10 +13,11 @@ const COLOR_VARIANTS = [
 ] as const;
 
 const FROG_COLORS = [
-  { name: "Фиолетовый", value: "#6d42e8", imageKeywords: ["фиолетовый", "purple", "violet"] },
-  { name: "Зелёный", value: "#46b84f", imageKeywords: ["зелёный", "зеленый", "green"] },
   { name: "Синий", value: "#3156d8", imageKeywords: ["синий", "blue"] },
+  { name: "Зелёный", value: "#46b84f", imageKeywords: ["зелёный", "зеленый", "green"] },
   { name: "Розовый", value: "#e94f9a", imageKeywords: ["розовый", "pink"] },
+  { name: "Красный", value: "#e53935", imageKeywords: ["красный", "red"] },
+  { name: "Жёлтый", value: "#f2c94c", imageKeywords: ["жёлтый", "желтый", "yellow"] },
 ] as const;
 
 function getColorImages(product: ProductWithRelations, colorName: string, colors = COLOR_VARIANTS) {
