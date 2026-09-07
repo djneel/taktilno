@@ -15,21 +15,18 @@ const SPHINX_COLORS = [
 function getColorImage(product: ProductWithRelations, colorName: string) {
   const color = SPHINX_COLORS.find((c) => c.name === colorName);
   if (!color) return getMainImage(product)?.url ?? null;
-
   const images = [...product.images].sort((a, b) => {
     if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
     return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   });
-
   const match = images.find((image) => {
     const haystack = `${image.url} ${image.alt ?? ""}`.toLowerCase();
     return color.imageKeywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
   });
-
   return match?.url ?? getMainImage(product)?.url ?? null;
 }
 
-export function BuyBox({ product, onColorImageChange }: { product: ProductWithRelations; onColorImageChange?: (url: string | null) => void }) {
+export function BuyBox({ product }: { product: ProductWithRelations }) {
   const [qty, setQty] = useState(1);
   const isSphinx = product.slug === "kot-sfinks" || product.name.toLowerCase().includes("кот-сфинкс");
   const [selectedColor, setSelectedColor] = useState<string>(SPHINX_COLORS[0].name);
@@ -38,7 +35,10 @@ export function BuyBox({ product, onColorImageChange }: { product: ProductWithRe
 
   const selectColor = (colorName: string) => {
     setSelectedColor(colorName);
-    onColorImageChange?.(getColorImage(product, colorName));
+    if (isSphinx) {
+      const url = getColorImage(product, colorName);
+      window.dispatchEvent(new CustomEvent("product-color-image", { detail: { url } }));
+    }
   };
 
   return (
@@ -50,13 +50,7 @@ export function BuyBox({ product, onColorImageChange }: { product: ProductWithRe
             {SPHINX_COLORS.map((color) => {
               const selected = selectedColor === color.name;
               return (
-                <button
-                  key={color.name}
-                  type="button"
-                  onClick={() => selectColor(color.name)}
-                  aria-pressed={selected}
-                  className={`inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold ring-1 transition-all ${selected ? "bg-bg2 ring-green" : "bg-bg2/40 ring-line/60 hover:ring-line"}`}
-                >
+                <button key={color.name} type="button" onClick={() => selectColor(color.name)} aria-pressed={selected} className={`inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold ring-1 transition-all ${selected ? "bg-bg2 ring-green" : "bg-bg2/40 ring-line/60 hover:ring-line"}`}>
                   <span aria-hidden="true" className="h-4 w-4 rounded-full ring-1 ring-white/20" style={{ backgroundColor: color.value }} />
                   {color.name}
                 </button>
