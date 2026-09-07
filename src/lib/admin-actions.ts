@@ -151,12 +151,47 @@ export async function toggleProductFlagAction(formData: FormData) {
 }
 
 /* ---------------- Product images ---------------- */
-export async function updateImageAction(input: { id: number; kind?: ImageKind; alt?: string }) {
+export async function updateImageAction(input: { id: number; kind?: ImageKind; alt?: string; colorVariant?: string | null }) {
   await requireAdmin();
   const patch: Partial<typeof productImages.$inferInsert> = {};
   if (input.kind && IMAGE_KINDS.includes(input.kind)) patch.kind = input.kind;
   if (typeof input.alt === "string") patch.alt = input.alt;
+  if (typeof input.colorVariant === "string" || input.colorVariant === null) {
+    patch.alt = patch.alt ?? undefined;
+  }
   await db.update(productImages).set(patch).where(eq(productImages.id, input.id));
+  if (typeof input.colorVariant === "string") {
+    await setImageColorVariant(input.id, input.colorVariant);
+  }
+  revalidateShop();
+}
+
+async function setImageColorVariant(imageId: number, colorVariant: string | null) {
+  const [img] = await db.select({ productId: productImages.productId }).from(productImages).where(eq(productImages.id, imageId));
+  if (!img) return;
+  const product = await db.query.products.findFirst({ where: eq(products.id, img.productId) });
+  if (!product) return;
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const normalized = variants.map((v) =>
+    v && typeof v === "object" && "name" in v
+      ? { ...v, imageUrl: v.name === colorVariant ? productImages.url : v.imageUrl }
+      : v
+  );
+  void normalized;
+}
+
+export async function setImageVariantAction(input: { id: number; colorVariant: string | null }) {
+  await requireAdmin();
+  const [img] = await db.select({ productId: productImages.productId, url: productImages.url }).from(productImages).where(eq(productImages.id, input.id));
+  if (!img) return;
+  const product = await db.query.products.findFirst({ where: eq(products.id, img.productId) });
+  if (!product) return;
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const next = variants.filter(Boolean).map((v) => {
+    if (!input.colorVariant) return v;
+    return v.name === input.colorVariant ? { ...v, imageUrl: img.url } : v;
+  });
+  await db.update(products).set({ variants: next, updatedAt: new Date() }).where(eq(products.id, img.productId));
   revalidateShop();
 }
 
