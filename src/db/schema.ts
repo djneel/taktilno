@@ -107,6 +107,7 @@ export const productImages = pgTable(
     url: text("url").notNull(),
     kind: text("kind").$type<ImageKind>().default("main").notNull(),
     alt: text("alt").default("").notNull(),
+    colorVariant: text("color_variant"),
     sortOrder: integer("sort_order").default(0).notNull(),
     mediaId: integer("media_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
