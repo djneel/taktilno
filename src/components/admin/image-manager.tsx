@@ -10,7 +10,16 @@ import { deleteImageAction, reorderImagesAction, setMainImageAction, updateImage
 import { Button } from "./ui";
 import { cn } from "@/lib/utils";
 
-const COLOR_OPTIONS = ["Серый", "Коричневый", "Чёрный", "Сине-фиолетовый"] as const;
+const COLOR_OPTIONS = [
+  "Фиолетовый",
+  "Зелёный",
+  "Синий",
+  "Розовый",
+  "Серый",
+  "Коричневый",
+  "Чёрный",
+  "Сине-фиолетовый",
+] as const;
 
 export function ImageManager({ productId, images: initial }: { productId: number; images: ProductImage[] }) {
   const [images, setImages] = useState(initial);
