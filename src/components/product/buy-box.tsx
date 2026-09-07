@@ -12,6 +12,8 @@ const COLOR_VARIANTS = [
   { name: "Сине-фиолетовый", value: "#5546a8", imageKeywords: ["сине-фиолетовый", "синий", "фиолетовый", "blue", "purple"] },
 ] as const;
 
+type ColorVariant = (typeof COLOR_VARIANTS)[number];
+
 const FROG_COLORS = [
   { name: "Синий", value: "#3156d8", imageKeywords: ["синий", "blue"] },
   { name: "Зелёный", value: "#46b84f", imageKeywords: ["зелёный", "зеленый", "green"] },
@@ -20,7 +22,10 @@ const FROG_COLORS = [
   { name: "Жёлтый", value: "#f2c94c", imageKeywords: ["жёлтый", "желтый", "yellow"] },
 ] as const;
 
-function getColorImages(product: ProductWithRelations, colorName: string, colors = COLOR_VARIANTS) {
+type FrogColorVariant = (typeof FROG_COLORS)[number];
+type AnyColorVariant = ColorVariant | FrogColorVariant;
+
+function getColorImages(product: ProductWithRelations, colorName: string, colors: readonly AnyColorVariant[]) {
   const images = [...product.images].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const assigned = images.filter((image) => image.colorVariant === colorName);
   if (assigned.length) return assigned;
@@ -34,7 +39,7 @@ function getColorImages(product: ProductWithRelations, colorName: string, colors
   return matches.length ? matches : images;
 }
 
-function getColorImage(product: ProductWithRelations, colorName: string, colors = COLOR_VARIANTS) {
+function getColorImage(product: ProductWithRelations, colorName: string, colors: readonly AnyColorVariant[]) {
   return getColorImages(product, colorName, colors)[0]?.url ?? getMainImage(product)?.url ?? null;
 }
 
@@ -42,7 +47,7 @@ export function BuyBox({ product }: { product: ProductWithRelations }) {
   const [qty, setQty] = useState(1);
   const isSphinx = product.slug === "kot-sfinks" || product.name.toLowerCase().includes("кот-сфинкс");
   const isFrog = product.slug === "lyagushka" || product.slug === "frog" || product.name.toLowerCase().includes("лягуш");
-  const colors = isFrog ? FROG_COLORS : COLOR_VARIANTS;
+  const colors: readonly AnyColorVariant[] = isFrog ? FROG_COLORS : COLOR_VARIANTS;
   const [selectedColor, setSelectedColor] = useState<string>(colors[0].name);
   const max = Math.max(1, Math.min(product.stock, 99));
   const soldOut = product.stock <= 0 || !product.isAvailable;
