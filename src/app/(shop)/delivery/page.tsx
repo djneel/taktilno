@@ -18,14 +18,14 @@ export default function DeliveryPage() {
       <p className="mt-2 text-sm text-muted">
         Выберите удобный пункт выдачи или отделение СДЭК, Ozon, Яндекс Доставки или Почты России при оформлении заказа.
       </p>
-      <p className="mt-2 text-sm font-semibold text-green">Бесплатная доставка при заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)}.</p>
+      <p className="mt-4 text-xl font-bold text-green sm:text-2xl">Бесплатная доставка при заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)}.</p>
 
       <section className="mt-10 grid gap-3 sm:grid-cols-2">
         {DELIVERY_METHODS.map((d) => (
           <div key={d.id} className="rounded-3xl bg-card p-5 ring-1 ring-line/60">
             <div className="flex items-start justify-between gap-3">
               <div className="text-lg font-bold">{d.name}</div>
-              <div className="text-right text-sm font-bold text-green">Бесплатно от {formatPrice(FREE_DELIVERY_THRESHOLD)}<br />иначе по расчёту</div>
+              <div className="text-sm font-bold text-green">По расчёту</div>
             </div>
             <p className="mt-1 text-sm text-muted">{d.description}</p>
           </div>
