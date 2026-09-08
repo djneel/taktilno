@@ -9,7 +9,7 @@ export function ProductForm({ product, categories }: { product: Product | null; 
   const extras = Object.entries(s).filter(([k]) => !KNOWN.includes(k));
 
   return (
-    <form action={saveProductAction} className="grid gap-4 lg:grid-cols-[1fr_320px]">
+    <form action={saveProductAction} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       {product && <input type="hidden" name="id" value={product.id} />}
 
       <div className="space-y-4">

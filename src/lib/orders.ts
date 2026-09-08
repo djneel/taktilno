@@ -153,7 +153,11 @@ export async function createOrder(input: CheckoutInput) {
     with: { items: true },
   });
   if (full) {
-    notifyNewOrder(full).catch(() => {});
+    try {
+      await notifyNewOrder(full);
+    } catch (e) {
+      console.error("[notifications] Ошибка отправки уведомления:", e);
+    }
   }
 
   return { orderNumber: created.number, paymentUrl, paymentMode, total };

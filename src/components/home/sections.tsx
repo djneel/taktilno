@@ -132,7 +132,7 @@ export function Featured({ products }: { products: ProductWithRelations[] }) {
       <Reveal>
         <SectionHeading title="Начни с этих" subtitle="Самые характерные персонажи ТАКТИЛЬНО." action={{ href: "/catalog", label: "Весь каталог" }} />
       </Reveal>
-      <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+      <div className="grid auto-rows-fr grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
         {products.map((p, i) => (
           <Reveal key={p.id} delay={i * 60} className="h-full">
             <ProductCard product={p} />

@@ -9,6 +9,7 @@ import {
   categories,
   media,
   orders,
+  orderItems,
   productImages,
   products,
   reviews,
@@ -230,11 +231,81 @@ export async function deleteReviewAction(formData: FormData) {
 
 export async function updateOrderStatusAction(formData: FormData) {
   await requireAdmin();
-  const id = num(formData, "id"); const status = str(formData, "status") as OrderStatus; const paymentStatus = str(formData, "paymentStatus") as PaymentStatus;
+  const id = num(formData, "id");
+  const status = str(formData, "status") as OrderStatus;
+  const paymentStatus = str(formData, "paymentStatus") as PaymentStatus;
   const patch: Partial<typeof orders.$inferInsert> = { updatedAt: new Date() };
   if (ORDER_STATUSES.includes(status)) patch.status = status;
   if (PAYMENT_STATUSES.includes(paymentStatus)) patch.paymentStatus = paymentStatus;
-  await db.update(orders).set(patch).where(eq(orders.id, id)); revalidatePath("/admin/orders"); revalidatePath(`/admin/orders/${id}`);
+  await db.update(orders).set(patch).where(eq(orders.id, id));
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function cancelOrderAction(formData: FormData) {
+  await requireAdmin();
+  const id = num(formData, "id");
+  if (!id) return;
+
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.id, id),
+    with: { items: true },
+  });
+  if (!order) return;
+
+  if (order.status !== "cancelled") {
+    // Возвращаем остатки товаров на склад
+    for (const item of order.items) {
+      if (item.productId) {
+        await db
+          .update(products)
+          .set({ stock: sql`${products.stock} + ${item.quantity}` })
+          .where(eq(products.id, item.productId));
+      }
+    }
+    await db
+      .update(orders)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(orders.id, id));
+  }
+
+  revalidateShop();
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function deleteOrderAction(formData: FormData) {
+  await requireAdmin();
+  const id = num(formData, "id");
+  if (!id) return;
+
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.id, id),
+    with: { items: true },
+  });
+  if (!order) return;
+
+  // Если заказ не был отменён ранее, возвращаем остатки на склад
+  if (order.status !== "cancelled") {
+    for (const item of order.items) {
+      if (item.productId) {
+        await db
+          .update(products)
+          .set({ stock: sql`${products.stock} + ${item.quantity}` })
+          .where(eq(products.id, item.productId));
+      }
+    }
+  }
+
+  await db.delete(orderItems).where(eq(orderItems.orderId, id));
+  await db.delete(orders).where(eq(orders.id, id));
+
+  revalidateShop();
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  redirect("/admin/orders");
 }
 
 export async function saveSettingsAction(formData: FormData) {
@@ -243,4 +314,57 @@ export async function saveSettingsAction(formData: FormData) {
   for (const k of keys) if (formData.has(k)) await setSetting(k, str(formData, k));
   const process: string[] = []; for (let i = 0; i < 5; i++) process.push(str(formData, `process_${i}`));
   await setSetting("process_images", JSON.stringify(process)); revalidateShop(); revalidatePath("/admin/settings");
+}
+
+export async function testTelegramAction(): Promise<{ ok: boolean; message: string }> {
+  await requireAdmin();
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
+
+  if (!token) {
+    return {
+      ok: false,
+      message: "TELEGRAM_BOT_TOKEN не задан в переменных окружения на хостинге.",
+    };
+  }
+  if (!chatId) {
+    return {
+      ok: false,
+      message: "TELEGRAM_CHAT_ID не задан в переменных окружения на хостинге.",
+    };
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: "🎉 <b>Тестовое уведомление ТАКТИЛЬНО</b>\n\nTelegram-бот успешно подключен и готов отправлять информацию о заказах!",
+        parse_mode: "HTML",
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      const desc = data.description || `HTTP ${res.status}`;
+      if (res.status === 401 || desc.includes("Unauthorized")) {
+        return { ok: false, message: `Неверный TELEGRAM_BOT_TOKEN (${desc}). Перепроверьте токен от @BotFather.` };
+      }
+      if (desc.includes("chat not found") || desc.includes("bot can't initiate conversation")) {
+        return {
+          ok: false,
+          message: `Чат не найден (${desc}). Обязательно откройте вашего бота в Telegram и нажмите кнопку «Start / Запустить» (или отправьте ему любое сообщение).`,
+        };
+      }
+      if (desc.includes("bot was blocked")) {
+        return { ok: false, message: `Бот заблокирован пользователем (${desc}). Разблокируйте бота в Telegram.` };
+      }
+      return { ok: false, message: `Telegram вернул ошибку: ${desc}` };
+    }
+
+    return { ok: true, message: `Тестовое сообщение успешно отправлено в чат ID ${chatId}!` };
+  } catch (e) {
+    return { ok: false, message: `Сетевая ошибка: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
