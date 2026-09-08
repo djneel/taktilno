@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   },
   description: "Подвижные 3D-фигурки, антистрессы и необычные подарки. Магазин ТАКТИЛЬНО.",
   applicationName: "ТАКТИЛЬНО",
-  icons: { icon: "/icon.svg" },
+  icons: { icon: [{ url: "/favicon.svg", type: "image/svg+xml" }] },
   openGraph: {
     type: "website",
     siteName: "ТАКТИЛЬНО",
