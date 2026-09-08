@@ -11,7 +11,7 @@
  */
 
 import type { Order, OrderItem } from "@/db/schema";
-import { DELIVERY_METHODS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, PAYMENT_STATUS_LABELS } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 
 export interface NotificationChannel {
@@ -46,8 +46,7 @@ const telegramChannel: NotificationChannel = {
 const channels: NotificationChannel[] = [telegramChannel];
 
 export function formatOrderMessage(order: Order & { items: OrderItem[] }) {
-  const delivery =
-    DELIVERY_METHODS.find((d) => d.id === order.deliveryMethod)?.name ?? order.deliveryMethod;
+  const delivery = getDeliveryMethodName(order.deliveryMethod);
   const lines = [
     `<b>Новый заказ ${order.number}</b>`,
     ``,

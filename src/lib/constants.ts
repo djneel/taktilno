@@ -28,50 +28,103 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: "Возврат",
 };
 
+export type DeliveryProvider = "cdek" | "ozon" | "yandex" | "russian_post";
+
 export type DeliveryMethod = {
   id: string;
+  provider: DeliveryProvider;
   name: string;
   description: string;
-  cost: number | null; // null — рассчитывается менеджером
+  cost: number;
   needsAddress: boolean;
   addressLabel: string;
 };
 
-/** Способы доставки. Расчёт через API СДЭК/Boxberry можно подключить в src/lib/delivery.ts */
-export const DELIVERY_METHODS: DeliveryMethod[] = [
+/**
+ * Доступные покупателю службы доставки.
+ *
+ * Тарифы фиксируются в момент оформления заказа. Если потребуется подключить
+ * тарифные API перевозчиков, замените `cost` результатом расчёта до создания
+ * заказа — идентификаторы способов уже сохраняются в orders.delivery_method.
+ */
+export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
     id: "cdek_pvz",
+    provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "3–7 дней по России",
+    description: "Обычно 2–7 дней по России",
     cost: 350,
     needsAddress: true,
-    addressLabel: "Адрес пункта выдачи",
+    addressLabel: "Адрес пункта выдачи СДЭК",
   },
   {
-    id: "post",
-    name: "Почта России",
-    description: "5–14 дней",
+    id: "ozon_pvz",
+    provider: "ozon",
+    name: "Ozon — пункт выдачи",
+    description: "Обычно 2–8 дней по России",
+    cost: 250,
+    needsAddress: true,
+    addressLabel: "Адрес пункта выдачи Ozon",
+  },
+  {
+    id: "yandex_pvz",
+    provider: "yandex",
+    name: "Яндекс Доставка — пункт выдачи",
+    description: "Обычно 2–8 дней по России",
     cost: 300,
     needsAddress: true,
-    addressLabel: "Индекс и адрес",
+    addressLabel: "Адрес пункта выдачи Яндекс Маркета",
+  },
+  {
+    id: "russian_post",
+    provider: "russian_post",
+    name: "Почта России — отделение",
+    description: "Обычно 5–14 дней по России",
+    cost: 300,
+    needsAddress: true,
+    addressLabel: "Индекс и адрес отделения Почты России",
+  },
+];
+
+// Старые способы остаются читаемыми в карточках ранее созданных заказов.
+const LEGACY_DELIVERY_METHODS: readonly Omit<DeliveryMethod, "provider">[] = [
+  {
+    id: "post",
+    name: "Почта России — отделение",
+    description: "Архивный способ доставки",
+    cost: 300,
+    needsAddress: true,
+    addressLabel: "Индекс и адрес отделения Почты России",
   },
   {
     id: "courier",
     name: "Курьер до двери",
-    description: "Стоимость рассчитает менеджер",
-    cost: null,
+    description: "Архивный способ доставки",
+    cost: 0,
     needsAddress: true,
     addressLabel: "Адрес доставки",
   },
   {
     id: "pickup",
     name: "Самовывоз",
-    description: "Договоримся о встрече",
+    description: "Архивный способ доставки",
     cost: 0,
     needsAddress: false,
     addressLabel: "",
   },
 ];
+
+export function getDeliveryMethod(id: string) {
+  return DELIVERY_METHODS.find((method) => method.id === id);
+}
+
+export function getDeliveryMethodName(id: string) {
+  return (
+    getDeliveryMethod(id)?.name ??
+    LEGACY_DELIVERY_METHODS.find((method) => method.id === id)?.name ??
+    id
+  );
+}
 
 export const SETTING_KEYS = {
   heroProductSlug: "hero_product_slug",

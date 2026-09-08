@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils";
-import { DELIVERY_METHODS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, PAYMENT_STATUS_LABELS } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Заказ принят", robots: { index: false } };
 
@@ -16,7 +16,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
     with: { items: true },
   });
   if (!order) notFound();
-  const delivery = DELIVERY_METHODS.find((d) => d.id === order.deliveryMethod)?.name ?? order.deliveryMethod;
+  const delivery = getDeliveryMethodName(order.deliveryMethod);
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-12 text-center sm:px-6 md:pt-20">

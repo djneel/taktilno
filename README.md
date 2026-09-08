@@ -22,7 +22,7 @@ Next.js (App Router) + PostgreSQL (Drizzle ORM) + Tailwind CSS.
 - **Оплата ЮKassa** — `src/lib/payments/index.ts`. Пока ключи не заданы, заказ создаётся со статусом
   «Ожидает оплаты», покупатель видит честное сообщение. Webhook: `/api/payments/yookassa/webhook`.
 - **Уведомления Telegram** — `src/lib/notifications/index.ts` (место для e-mail/SMS каналов).
-- **Доставка** — способы и цены в `src/lib/constants.ts` (`DELIVERY_METHODS`); сюда же подключается расчёт через API СДЭК и т.д.
+- **Доставка** — на оформлении доступны СДЭК, Ozon, Яндекс Доставка и Почта России. Способ, выбранный пункт/отделение и фиксированный тариф сохраняются в заказе. Конфигурация находится в `src/lib/constants.ts` (`DELIVERY_METHODS`); при необходимости фиксированный тариф можно заменить расчётом через API перевозчика.
 
 ## Разработка
 

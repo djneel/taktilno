@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { orders, orderItems, products, type OrderStatus, type PaymentStatus } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getMainImage } from "./images";
-import { DELIVERY_METHODS } from "./constants";
+import { getDeliveryMethod } from "./constants";
 import { getPaymentProvider } from "./payments";
 import { notifyNewOrder } from "./notifications";
 
@@ -33,7 +33,7 @@ export async function createOrder(input: CheckoutInput) {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new CheckoutError("Укажите корректный e-mail");
   if (!city) throw new CheckoutError("Укажите город");
 
-  const delivery = DELIVERY_METHODS.find((d) => d.id === input.deliveryMethod);
+  const delivery = getDeliveryMethod(input.deliveryMethod);
   if (!delivery) throw new CheckoutError("Выберите способ доставки");
   if (delivery.needsAddress && !input.address?.trim()) {
     throw new CheckoutError("Укажите адрес / пункт выдачи");

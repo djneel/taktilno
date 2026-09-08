@@ -81,6 +81,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
 
         <Fieldset title="Доставка">
           <Input label="Город" required value={form.city} onChange={set("city")} autoComplete="address-level2" />
+          <p className="-mt-1 text-sm text-muted">Выберите службу и укажите удобный пункт выдачи или отделение.</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {DELIVERY_METHODS.map((d) => (
               <label

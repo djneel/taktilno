@@ -17,6 +17,7 @@ export default function DeliveryPage() {
         Доставка<span className="text-green">.</span>
       </h1>
       <p className="mt-3 text-muted">Отправляем по всей России в течение 1–3 дней после оплаты.</p>
+      <p className="mt-2 text-sm text-muted">Выберите удобный пункт выдачи или отделение СДЭК, Ozon, Яндекс Доставки или Почты России при оформлении заказа.</p>
 
       <section className="mt-10 grid gap-3 sm:grid-cols-2">
         {DELIVERY_METHODS.map((d) => (
