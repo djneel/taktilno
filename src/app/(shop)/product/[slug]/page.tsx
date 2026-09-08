@@ -88,10 +88,13 @@ export default async function ProductPage({ params }: Props) {
         <span className="text-fg">{product.name}</span>
       </nav>
 
-      <div className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:gap-12 lg:gap-16">
-        <ProductGallery images={images} name={product.name} />
+      {/* 12-колоночная сетка с гарантированным сохранением пропорций колонок */}
+      <div className="grid items-start gap-8 md:grid-cols-12 md:gap-10 lg:gap-14">
+        <div className="w-full min-w-0 md:col-span-7 lg:col-span-7">
+          <ProductGallery images={images} name={product.name} />
+        </div>
 
-        <div>
+        <div className="w-full min-w-0 md:col-span-5 lg:col-span-5">
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
             {product.category && <span>{product.category.name}</span>}
             {product.isNew && <span className="rounded-full bg-pink/15 px-2 py-0.5 text-pink">Новинка</span>}
@@ -150,7 +153,7 @@ export default async function ProductPage({ params }: Props) {
       {related.length > 0 && (
         <section className="mt-20">
           <h2 className="heading text-3xl sm:text-4xl">Похожие персонажи</h2>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+          <div className="mt-6 grid auto-rows-fr grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
             {related.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}

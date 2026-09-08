@@ -26,11 +26,16 @@ const telegramChannel: NotificationChannel = {
   async send(message) {
     const token = process.env.TELEGRAM_BOT_TOKEN!;
     const chatId = process.env.TELEGRAM_CHAT_ID!;
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.error("[telegram] Ошибка отправки:", res.status, data);
+      throw new Error(`Telegram API ${res.status}: ${JSON.stringify(data)}`);
+    }
   },
 };
 

@@ -37,19 +37,26 @@ export function ProductCard({
         </div>
       </Link>
 
-      <div className="flex min-h-[170px] flex-1 flex-col gap-1.5 p-4 sm:min-h-[185px] sm:p-5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+      <div className="flex flex-1 flex-col p-4 sm:p-5">
+        <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
           {product.category?.name ?? "Фигурка"}
         </div>
-        <Link href={`/product/${product.slug}`} className="line-clamp-2 text-base font-bold leading-tight sm:text-lg">
-          <span className="absolute inset-0 z-0" aria-hidden />
-          {product.name}
-        </Link>
-        {product.shortDescription ? (
-          <p className="line-clamp-2 min-h-[40px] text-sm text-muted">{product.shortDescription}</p>
-        ) : (
-          <div className="min-h-[40px]" />
-        )}
+
+        {/* Фикс-слот названия: ровно 2 строки с фиксированной высотой на мобильных и десктопе */}
+        <div className="mt-1.5 h-10 sm:h-12">
+          <Link href={`/product/${product.slug}`} className="line-clamp-2 text-base font-bold leading-tight sm:text-lg">
+            <span className="absolute inset-0 z-0" aria-hidden />
+            {product.name}
+          </Link>
+        </div>
+
+        {/* Фикс-слот описания: ровно 2 строки с фиксированной высотой */}
+        <div className="mt-1.5 h-10">
+          {product.shortDescription ? (
+            <p className="line-clamp-2 text-sm leading-5 text-muted">{product.shortDescription}</p>
+          ) : null}
+        </div>
+
         <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-extrabold tracking-tight">{formatPrice(product.price)}</span>
