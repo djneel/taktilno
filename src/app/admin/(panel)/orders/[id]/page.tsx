@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { orders, ORDER_STATUSES, PAYMENT_STATUSES } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { updateOrderStatusAction } from "@/lib/admin-actions";
+import { updateOrderStatusAction, cancelOrderAction, deleteOrderAction } from "@/lib/admin-actions";
 import { Button, Card, Field, PageTitle, Select } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
 import { DELIVERY_METHODS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
@@ -17,8 +17,11 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
 
   return (
     <>
-      <div className="mb-4 text-sm text-muted"><Link href="/admin/orders" className="hover:text-fg">← Заказы</Link></div>
+      <div className="mb-4 text-sm text-muted">
+        <Link href="/admin/orders" className="hover:text-fg">← Заказы</Link>
+      </div>
       <PageTitle title={`Заказ ${order.number}`} />
+
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <div className="space-y-4">
           <Card>
@@ -31,16 +34,27 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="font-bold">{i.name}</div>
-                    <div className="text-xs text-muted">{i.quantity} × {formatPrice(i.price)}</div>
+                    <div className="text-xs text-muted">
+                      {i.quantity} × {formatPrice(i.price)}
+                    </div>
                   </div>
                   <div className="font-bold">{formatPrice(i.price * i.quantity)}</div>
                 </li>
               ))}
             </ul>
             <div className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
-              <div className="flex justify-between text-muted"><span>Товары</span><span className="text-fg">{formatPrice(order.subtotal)}</span></div>
-              <div className="flex justify-between text-muted"><span>Доставка</span><span className="text-fg">{formatPrice(order.deliveryCost)}</span></div>
-              <div className="flex justify-between text-base font-bold"><span>Итого</span><span>{formatPrice(order.total)}</span></div>
+              <div className="flex justify-between text-muted">
+                <span>Товары</span>
+                <span className="text-fg">{formatPrice(order.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-muted">
+                <span>Доставка</span>
+                <span className="text-fg">{formatPrice(order.deliveryCost)}</span>
+              </div>
+              <div className="flex justify-between text-base font-bold">
+                <span>Итого</span>
+                <span>{formatPrice(order.total)}</span>
+              </div>
             </div>
           </Card>
 
@@ -61,23 +75,59 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
           </Card>
         </div>
 
-        <Card>
-          <h2 className="mb-3 text-lg font-bold">Статусы</h2>
-          <form action={updateOrderStatusAction} className="grid gap-3">
-            <input type="hidden" name="id" value={order.id} />
-            <Field label="Статус заказа">
-              <Select name="status" defaultValue={order.status}>
-                {ORDER_STATUSES.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
-              </Select>
-            </Field>
-            <Field label="Статус оплаты" hint="При подключённой ЮKassa обновляется автоматически через webhook">
-              <Select name="paymentStatus" defaultValue={order.paymentStatus}>
-                {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
-              </Select>
-            </Field>
-            <Button type="submit">Сохранить</Button>
-          </form>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <h2 className="mb-3 text-lg font-bold">Статусы</h2>
+            <form action={updateOrderStatusAction} className="grid gap-3">
+              <input type="hidden" name="id" value={order.id} />
+              <Field label="Статус заказа">
+                <Select name="status" defaultValue={order.status}>
+                  {ORDER_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {ORDER_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Статус оплаты" hint="При подключённой ЮKassa обновляется автоматически через webhook">
+                <Select name="paymentStatus" defaultValue={order.paymentStatus}>
+                  {PAYMENT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {PAYMENT_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Button type="submit" variant="green">Сохранить изменения</Button>
+            </form>
+          </Card>
+
+          <Card>
+            <h2 className="mb-3 text-lg font-bold">Управление заказом</h2>
+            <div className="space-y-2.5">
+              {order.status !== "cancelled" && (
+                <form action={cancelOrderAction}>
+                  <input type="hidden" name="id" value={order.id} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-2xl border border-line bg-card py-3 text-sm font-semibold text-muted transition-colors hover:border-pink/40 hover:text-pink"
+                  >
+                    Отменить заказ (вернуть остатки)
+                  </button>
+                </form>
+              )}
+              <form action={deleteOrderAction}>
+                <input type="hidden" name="id" value={order.id} />
+                <button
+                  type="submit"
+                  className="w-full rounded-2xl bg-pink/10 py-3 text-sm font-bold text-pink transition-colors hover:bg-pink/20"
+                >
+                  Удалить заказ навсегда
+                </button>
+              </form>
+            </div>
+          </Card>
+        </div>
       </div>
     </>
   );

@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { Badge, PageTitle } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
 import { DELIVERY_METHODS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { deleteOrderAction } from "@/lib/admin-actions";
 import { cn } from "@/lib/utils";
 
 export default async function AdminOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
@@ -34,8 +35,8 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         ) : (
           <ul className="divide-y divide-line">
             {list.map((o) => (
-              <li key={o.id}>
-                <Link href={`/admin/orders/${o.id}`} className="grid gap-2 p-4 hover:bg-bg2/50 sm:grid-cols-[120px_1fr_auto] sm:items-center">
+              <li key={o.id} className="group relative flex items-center justify-between p-4 hover:bg-bg2/50">
+                <Link href={`/admin/orders/${o.id}`} className="grid flex-1 gap-2 sm:grid-cols-[120px_1fr_auto] sm:items-center">
                   <div>
                     <div className="font-bold">{o.number}</div>
                     <div className="text-xs text-muted">{formatDate(o.createdAt)}</div>
@@ -54,6 +55,17 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                     <Badge tone={o.status === "new" ? "green" : "muted"}>{ORDER_STATUS_LABELS[o.status]}</Badge>
                   </div>
                 </Link>
+                <form action={deleteOrderAction} className="ml-3 shrink-0">
+                  <input type="hidden" name="id" value={o.id} />
+                  <button
+                    type="submit"
+                    title="Удалить заказ"
+                    aria-label="Удалить заказ"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-muted transition-colors hover:bg-pink/15 hover:text-pink"
+                  >
+                    ✕
+                  </button>
+                </form>
               </li>
             ))}
           </ul>

@@ -9,6 +9,7 @@ import {
   categories,
   media,
   orders,
+  orderItems,
   productImages,
   products,
   reviews,
@@ -230,11 +231,81 @@ export async function deleteReviewAction(formData: FormData) {
 
 export async function updateOrderStatusAction(formData: FormData) {
   await requireAdmin();
-  const id = num(formData, "id"); const status = str(formData, "status") as OrderStatus; const paymentStatus = str(formData, "paymentStatus") as PaymentStatus;
+  const id = num(formData, "id");
+  const status = str(formData, "status") as OrderStatus;
+  const paymentStatus = str(formData, "paymentStatus") as PaymentStatus;
   const patch: Partial<typeof orders.$inferInsert> = { updatedAt: new Date() };
   if (ORDER_STATUSES.includes(status)) patch.status = status;
   if (PAYMENT_STATUSES.includes(paymentStatus)) patch.paymentStatus = paymentStatus;
-  await db.update(orders).set(patch).where(eq(orders.id, id)); revalidatePath("/admin/orders"); revalidatePath(`/admin/orders/${id}`);
+  await db.update(orders).set(patch).where(eq(orders.id, id));
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function cancelOrderAction(formData: FormData) {
+  await requireAdmin();
+  const id = num(formData, "id");
+  if (!id) return;
+
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.id, id),
+    with: { items: true },
+  });
+  if (!order) return;
+
+  if (order.status !== "cancelled") {
+    // Возвращаем остатки товаров на склад
+    for (const item of order.items) {
+      if (item.productId) {
+        await db
+          .update(products)
+          .set({ stock: sql`${products.stock} + ${item.quantity}` })
+          .where(eq(products.id, item.productId));
+      }
+    }
+    await db
+      .update(orders)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(orders.id, id));
+  }
+
+  revalidateShop();
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function deleteOrderAction(formData: FormData) {
+  await requireAdmin();
+  const id = num(formData, "id");
+  if (!id) return;
+
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.id, id),
+    with: { items: true },
+  });
+  if (!order) return;
+
+  // Если заказ не был отменён ранее, возвращаем остатки на склад
+  if (order.status !== "cancelled") {
+    for (const item of order.items) {
+      if (item.productId) {
+        await db
+          .update(products)
+          .set({ stock: sql`${products.stock} + ${item.quantity}` })
+          .where(eq(products.id, item.productId));
+      }
+    }
+  }
+
+  await db.delete(orderItems).where(eq(orderItems.orderId, id));
+  await db.delete(orders).where(eq(orders.id, id));
+
+  revalidateShop();
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  redirect("/admin/orders");
 }
 
 export async function saveSettingsAction(formData: FormData) {
