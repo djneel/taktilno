@@ -4,7 +4,7 @@ import { orders, products, reviews } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { Card, PageTitle, Badge } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
-import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
 import { isOnlinePaymentEnabled } from "@/lib/payments";
 import { TelegramTestButton } from "@/components/admin/telegram-test-button";
 
@@ -45,7 +45,7 @@ export default async function AdminDashboard() {
                     <span className="font-bold">{o.number}</span>
                     <span className="text-sm text-muted">{formatDate(o.createdAt)}</span>
                     <span className="text-sm">{o.customerName}</span>
-                    <span className="ml-auto font-bold">{formatPrice(o.total)}</span>
+                    <span className="ml-auto font-bold">{requiresDeliveryCalculation(o.deliveryMethod) ? "По расчёту" : formatPrice(o.total)}</span>
                     <Badge tone={o.status === "new" ? "green" : "muted"}>{ORDER_STATUS_LABELS[o.status]}</Badge>
                     <Badge tone={o.paymentStatus === "paid" ? "green" : "pink"}>{PAYMENT_STATUS_LABELS[o.paymentStatus]}</Badge>
                   </Link>

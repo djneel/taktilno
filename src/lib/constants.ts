@@ -35,7 +35,7 @@ export type DeliveryMethod = {
   provider: DeliveryProvider;
   name: string;
   description: string;
-  cost: number;
+  cost: number | null; // null — рассчитывается менеджером
   needsAddress: boolean;
   addressLabel: string;
 };
@@ -43,17 +43,17 @@ export type DeliveryMethod = {
 /**
  * Доступные покупателю службы доставки.
  *
- * Тарифы фиксируются в момент оформления заказа. Если потребуется подключить
- * тарифные API перевозчиков, замените `cost` результатом расчёта до создания
- * заказа — идентификаторы способов уже сохраняются в orders.delivery_method.
+ * Стоимость определяется для каждого заказа отдельно. До подключения тарифных
+ * API перевозчиков покупатель видит честное «По расчёту», а менеджер уточняет
+ * стоимость после оформления. Идентификатор способа сохраняется в orders.delivery_method.
  */
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
     id: "cdek_pvz",
     provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "Обычно 2–7 дней по России",
-    cost: 350,
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи СДЭК",
   },
@@ -61,8 +61,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "ozon_pvz",
     provider: "ozon",
     name: "Ozon — пункт выдачи",
-    description: "Обычно 2–8 дней по России",
-    cost: 250,
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Ozon",
   },
@@ -70,8 +70,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "yandex_pvz",
     provider: "yandex",
     name: "Яндекс Доставка — пункт выдачи",
-    description: "Обычно 2–8 дней по России",
-    cost: 300,
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Яндекс Маркета",
   },
@@ -79,8 +79,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "russian_post",
     provider: "russian_post",
     name: "Почта России — отделение",
-    description: "Обычно 5–14 дней по России",
-    cost: 300,
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
     needsAddress: true,
     addressLabel: "Индекс и адрес отделения Почты России",
   },
@@ -124,6 +124,10 @@ export function getDeliveryMethodName(id: string) {
     LEGACY_DELIVERY_METHODS.find((method) => method.id === id)?.name ??
     id
   );
+}
+
+export function requiresDeliveryCalculation(id: string) {
+  return getDeliveryMethod(id)?.cost === null;
 }
 
 export const SETTING_KEYS = {

@@ -81,17 +81,17 @@ export function CartView() {
       <aside className="rounded-3xl bg-card p-5 ring-1 ring-line/60 md:sticky md:top-24 sm:p-6">
         <div className="flex items-center justify-between text-sm text-muted">
           <span>
-            {count} {pluralize(count, ["товар", "товара", "товаров"])}
+            Товары · {count} {pluralize(count, ["товар", "товара", "товаров"])}
           </span>
           <span>{formatPrice(subtotal)}</span>
         </div>
         <div className="mt-1 flex items-center justify-between text-sm text-muted">
           <span>Доставка</span>
-          <span>на следующем шаге</span>
+          <span>По расчёту</span>
         </div>
         <div className="mt-4 flex items-baseline justify-between border-t border-line pt-4">
-          <span className="text-base font-bold">Итого</span>
-          <span className="text-2xl font-extrabold tracking-tight">{formatPrice(subtotal)}</span>
+          <span className="text-base font-bold">Итого после расчёта</span>
+          <span className="text-right text-2xl font-extrabold tracking-tight">По расчёту</span>
         </div>
         <Link
           href="/checkout"

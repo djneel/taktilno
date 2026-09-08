@@ -90,7 +90,8 @@ export async function createOrder(input: CheckoutInput) {
         total,
         status: "new",
         paymentStatus: "pending",
-        paymentProvider: getPaymentProvider().id,
+        // Пока стоимость доставки не рассчитана, платёж не создаём: итоговая сумма ещё неизвестна.
+        paymentProvider: delivery.cost === null ? "manual" : getPaymentProvider().id,
       })
       .returning();
 
@@ -123,29 +124,32 @@ export async function createOrder(input: CheckoutInput) {
     return { ...order, number };
   });
 
-  // Платёж
-  const provider = getPaymentProvider();
+  // Платёж создаём только когда известна итоговая сумма. При «По расчёту»
+  // менеджер сначала подтверждает стоимость доставки покупателю.
   let paymentUrl: string | null = null;
   let paymentMode: "redirect" | "manual" = "manual";
-  try {
-    const result = await provider.createPayment({
-      orderId: created.id,
-      orderNumber: created.number,
-      amount: total,
-      description: `Заказ ${created.number} — ТАКТИЛЬНО`,
-      customerEmail: email,
-      customerPhone: phone,
-    });
-    if (result.kind === "redirect") {
-      paymentUrl = result.url;
-      paymentMode = "redirect";
-      await db
-        .update(orders)
-        .set({ paymentId: result.paymentId, paymentUrl: result.url, paymentProvider: result.provider })
-        .where(eq(orders.id, created.id));
+  if (delivery.cost !== null) {
+    const provider = getPaymentProvider();
+    try {
+      const result = await provider.createPayment({
+        orderId: created.id,
+        orderNumber: created.number,
+        amount: total,
+        description: `Заказ ${created.number} — ТАКТИЛЬНО`,
+        customerEmail: email,
+        customerPhone: phone,
+      });
+      if (result.kind === "redirect") {
+        paymentUrl = result.url;
+        paymentMode = "redirect";
+        await db
+          .update(orders)
+          .set({ paymentId: result.paymentId, paymentUrl: result.url, paymentProvider: result.provider })
+          .where(eq(orders.id, created.id));
+      }
+    } catch (e) {
+      console.error("[payments] Не удалось создать платёж:", e);
     }
-  } catch (e) {
-    console.error("[payments] Не удалось создать платёж:", e);
   }
 
   const full = await db.query.orders.findFirst({

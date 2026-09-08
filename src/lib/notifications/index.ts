@@ -11,7 +11,7 @@
  */
 
 import type { Order, OrderItem } from "@/db/schema";
-import { getDeliveryMethodName, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 
 export interface NotificationChannel {
@@ -47,12 +47,15 @@ const channels: NotificationChannel[] = [telegramChannel];
 
 export function formatOrderMessage(order: Order & { items: OrderItem[] }) {
   const delivery = getDeliveryMethodName(order.deliveryMethod);
+  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod);
   const lines = [
     `<b>Новый заказ ${order.number}</b>`,
     ``,
     ...order.items.map((i) => `• ${i.name} × ${i.quantity} — ${formatPrice(i.price * i.quantity)}`),
     ``,
-    `Итого: <b>${formatPrice(order.total)}</b>`,
+    `Товары: <b>${formatPrice(order.subtotal)}</b>`,
+    `Доставка: ${deliveryNeedsCalculation ? "по расчёту" : formatPrice(order.deliveryCost)}`,
+    deliveryNeedsCalculation ? "Итого: <b>по расчёту</b>" : `Итого: <b>${formatPrice(order.total)}</b>`,
     `Оплата: ${PAYMENT_STATUS_LABELS[order.paymentStatus]}`,
     ``,
     `${order.customerName}`,
