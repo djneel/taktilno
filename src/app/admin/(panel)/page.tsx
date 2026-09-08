@@ -6,6 +6,7 @@ import { Card, PageTitle, Badge } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
 import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
 import { isOnlinePaymentEnabled } from "@/lib/payments";
+import { TelegramTestButton } from "@/components/admin/telegram-test-button";
 
 export default async function AdminDashboard() {
   const [[{ productsCount }], [{ ordersCount }], [{ newOrders }], [{ reviewsCount }], recent] = await Promise.all([
@@ -60,6 +61,7 @@ export default async function AdminDashboard() {
             <Integration ok={telegram} name="Telegram-уведомления" hint="TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID" />
             <Integration ok={Boolean(process.env.ADMIN_PASSWORD)} name="Свой пароль админки" hint="ADMIN_PASSWORD" />
           </ul>
+          <TelegramTestButton />
           <p className="mt-4 text-xs text-muted">Переменные задаются в окружении хостинга (.env). После изменения — перезапустить сервер.</p>
         </Card>
       </div>

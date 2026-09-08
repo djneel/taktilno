@@ -244,3 +244,56 @@ export async function saveSettingsAction(formData: FormData) {
   const process: string[] = []; for (let i = 0; i < 5; i++) process.push(str(formData, `process_${i}`));
   await setSetting("process_images", JSON.stringify(process)); revalidateShop(); revalidatePath("/admin/settings");
 }
+
+export async function testTelegramAction(): Promise<{ ok: boolean; message: string }> {
+  await requireAdmin();
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
+
+  if (!token) {
+    return {
+      ok: false,
+      message: "TELEGRAM_BOT_TOKEN не задан в переменных окружения на хостинге.",
+    };
+  }
+  if (!chatId) {
+    return {
+      ok: false,
+      message: "TELEGRAM_CHAT_ID не задан в переменных окружения на хостинге.",
+    };
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: "🎉 <b>Тестовое уведомление ТАКТИЛЬНО</b>\n\nTelegram-бот успешно подключен и готов отправлять информацию о заказах!",
+        parse_mode: "HTML",
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      const desc = data.description || `HTTP ${res.status}`;
+      if (res.status === 401 || desc.includes("Unauthorized")) {
+        return { ok: false, message: `Неверный TELEGRAM_BOT_TOKEN (${desc}). Перепроверьте токен от @BotFather.` };
+      }
+      if (desc.includes("chat not found") || desc.includes("bot can't initiate conversation")) {
+        return {
+          ok: false,
+          message: `Чат не найден (${desc}). Обязательно откройте вашего бота в Telegram и нажмите кнопку «Start / Запустить» (или отправьте ему любое сообщение).`,
+        };
+      }
+      if (desc.includes("bot was blocked")) {
+        return { ok: false, message: `Бот заблокирован пользователем (${desc}). Разблокируйте бота в Telegram.` };
+      }
+      return { ok: false, message: `Telegram вернул ошибку: ${desc}` };
+    }
+
+    return { ok: true, message: `Тестовое сообщение успешно отправлено в чат ID ${chatId}!` };
+  } catch (e) {
+    return { ok: false, message: `Сетевая ошибка: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
