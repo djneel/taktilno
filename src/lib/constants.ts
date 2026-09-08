@@ -43,10 +43,14 @@ export type DeliveryMethod = {
 /**
  * Доступные покупателю службы доставки.
  *
- * Стоимость определяется для каждого заказа отдельно. До подключения тарифных
- * API перевозчиков покупатель видит честное «По расчёту», а менеджер уточняет
- * стоимость после оформления. Идентификатор способа сохраняется в orders.delivery_method.
+ * При сумме товаров от FREE_DELIVERY_THRESHOLD доставка бесплатна. Ниже порога
+ * тариф определяется для каждого заказа отдельно: до подключения API перевозчиков
+ * покупатель видит честное «По расчёту», а менеджер уточняет стоимость после оформления.
+ * Идентификатор способа сохраняется в orders.delivery_method.
  */
+/** Бесплатная доставка применяется только к текущим активным способам. */
+export const FREE_DELIVERY_THRESHOLD = 2_000;
+
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
     id: "cdek_pvz",
@@ -126,8 +130,18 @@ export function getDeliveryMethodName(id: string) {
   );
 }
 
-export function requiresDeliveryCalculation(id: string) {
-  return getDeliveryMethod(id)?.cost === null;
+export function isFreeDelivery(id: string, subtotal: number, storedDeliveryCost?: number) {
+  return Boolean(getDeliveryMethod(id)) && subtotal >= FREE_DELIVERY_THRESHOLD && (storedDeliveryCost === undefined || storedDeliveryCost === 0);
+}
+
+export function requiresDeliveryCalculation(id: string, subtotal: number, storedDeliveryCost?: number) {
+  const activeMethodIsUnquoted = getDeliveryMethod(id)?.cost === null;
+  if (!activeMethodIsUnquoted) return false;
+  // Existing orders with a saved, non-zero tariff stay historical; a current
+  // order has zero in the legacy-required column until its tariff is calculated.
+  return storedDeliveryCost === undefined
+    ? !isFreeDelivery(id, subtotal)
+    : storedDeliveryCost === 0 && !isFreeDelivery(id, subtotal, storedDeliveryCost);
 }
 
 export const SETTING_KEYS = {

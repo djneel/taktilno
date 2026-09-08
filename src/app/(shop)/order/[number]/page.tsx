@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Заказ принят", robots: { index: false } };
 
@@ -17,7 +17,8 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
   });
   if (!order) notFound();
   const delivery = getDeliveryMethodName(order.deliveryMethod);
-  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod);
+  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal, order.deliveryCost);
+  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod, order.subtotal, order.deliveryCost);
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-12 text-center sm:px-6 md:pt-20">
@@ -48,7 +49,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
           <div className="mt-4 space-y-1.5 border-t border-line pt-4 text-sm">
             <div className="flex justify-between gap-3 text-muted">
               <span>Доставка</span>
-              <span className="text-right text-fg">{delivery} · {deliveryNeedsCalculation ? "по расчёту" : formatPrice(order.deliveryCost)}</span>
+              <span className="text-right text-fg">{delivery} · {deliveryNeedsCalculation ? "по расчёту" : deliveryIsFree ? "Бесплатно" : formatPrice(order.deliveryCost)}</span>
             </div>
             <div className="flex justify-between text-muted"><span>Оплата</span><span className="text-fg">{PAYMENT_STATUS_LABELS[order.paymentStatus]}</span></div>
             <div className="flex justify-between pt-2 text-base font-bold">

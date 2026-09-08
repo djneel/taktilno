@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { orders, orderItems, products, type OrderStatus, type PaymentStatus } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getMainImage } from "./images";
-import { getDeliveryMethod } from "./constants";
+import { getDeliveryMethod, isFreeDelivery } from "./constants";
 import { getPaymentProvider } from "./payments";
 import { notifyNewOrder } from "./notifications";
 
@@ -70,8 +70,13 @@ export async function createOrder(input: CheckoutInput) {
   }
 
   const subtotal = lines.reduce((s, l) => s + l.product.price * l.quantity, 0);
-  const deliveryCost = delivery.cost ?? 0;
+  const deliveryIsFree = isFreeDelivery(delivery.id, subtotal);
+  // В текущей схеме delivery_cost обязателен. Для заказа ниже порога ноль —
+  // служебное значение старой схемы, а не стоимость доставки: UI и оплата
+  // определяют состояние «По расчёту» по активному способу и сумме товаров.
+  const deliveryCost = deliveryIsFree ? 0 : delivery.cost ?? 0;
   const total = subtotal + deliveryCost;
+  const hasFinalTotal = deliveryIsFree || delivery.cost !== null;
 
   const created = await db.transaction(async (tx) => {
     const [order] = await tx
@@ -91,7 +96,7 @@ export async function createOrder(input: CheckoutInput) {
         status: "new",
         paymentStatus: "pending",
         // Пока стоимость доставки не рассчитана, платёж не создаём: итоговая сумма ещё неизвестна.
-        paymentProvider: delivery.cost === null ? "manual" : getPaymentProvider().id,
+        paymentProvider: hasFinalTotal ? getPaymentProvider().id : "manual",
       })
       .returning();
 
@@ -128,7 +133,7 @@ export async function createOrder(input: CheckoutInput) {
   // менеджер сначала подтверждает стоимость доставки покупателю.
   let paymentUrl: string | null = null;
   let paymentMode: "redirect" | "manual" = "manual";
-  if (delivery.cost !== null) {
+  if (hasFinalTotal) {
     const provider = getPaymentProvider();
     try {
       const result = await provider.createPayment({
@@ -164,7 +169,7 @@ export async function createOrder(input: CheckoutInput) {
     }
   }
 
-  return { orderNumber: created.number, paymentUrl, paymentMode, total };
+  return { orderNumber: created.number, paymentUrl, paymentMode, total: hasFinalTotal ? total : null };
 }
 
 export async function markOrderPaid(opts: { paymentId?: string; orderNumber?: string }) {

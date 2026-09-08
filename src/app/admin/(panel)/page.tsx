@@ -45,7 +45,7 @@ export default async function AdminDashboard() {
                     <span className="font-bold">{o.number}</span>
                     <span className="text-sm text-muted">{formatDate(o.createdAt)}</span>
                     <span className="text-sm">{o.customerName}</span>
-                    <span className="ml-auto font-bold">{requiresDeliveryCalculation(o.deliveryMethod) ? "По расчёту" : formatPrice(o.total)}</span>
+                    <span className="ml-auto font-bold">{requiresDeliveryCalculation(o.deliveryMethod, o.subtotal, o.deliveryCost) ? "По расчёту" : formatPrice(o.total)}</span>
                     <Badge tone={o.status === "new" ? "green" : "muted"}>{ORDER_STATUS_LABELS[o.status]}</Badge>
                     <Badge tone={o.paymentStatus === "paid" ? "green" : "pink"}>{PAYMENT_STATUS_LABELS[o.paymentStatus]}</Badge>
                   </Link>

@@ -7,13 +7,14 @@ import { eq } from "drizzle-orm";
 import { updateOrderStatusAction, cancelOrderAction, deleteOrderAction } from "@/lib/admin-actions";
 import { Button, Card, Field, PageTitle, Select } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
 
 export default async function AdminOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const order = await db.query.orders.findFirst({ where: eq(orders.id, Number(id)), with: { items: true } });
   if (!order) notFound();
-  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod);
+  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal, order.deliveryCost);
+  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod, order.subtotal, order.deliveryCost);
 
   return (
     <>
@@ -49,7 +50,7 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               </div>
               <div className="flex justify-between text-muted">
                 <span>Доставка</span>
-                <span className="text-fg">{deliveryNeedsCalculation ? "По расчёту" : formatPrice(order.deliveryCost)}</span>
+                <span className="text-fg">{deliveryNeedsCalculation ? "По расчёту" : deliveryIsFree ? "Бесплатно" : formatPrice(order.deliveryCost)}</span>
               </div>
               <div className="flex justify-between gap-3 text-base font-bold">
                 <span>{deliveryNeedsCalculation ? "Итого после расчёта" : "Итого"}</span>
