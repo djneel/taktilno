@@ -20,6 +20,10 @@ export function ensureSeeded() {
 }
 
 async function seed() {
+  // A newly provisioned PostgreSQL database is completely empty. Create the
+  // base schema before applying incremental compatibility changes or seeding.
+  await ensureSchema();
+
   // Production DB may predate the color-variant feature. Apply this tiny,
   // idempotent schema change before any relational product query runs.
   await db.execute(sql`ALTER TABLE "product_images" ADD COLUMN IF NOT EXISTS "color_variant" text`);
@@ -239,6 +243,122 @@ async function seed() {
   await setSetting(SETTING_KEYS.contactVk, "https://vk.com/taktilno");
   await setSetting(SETTING_KEYS.contactEmail, "hello@taktilno.ru");
   await setSetting(SETTING_KEYS.seeded, "1");
+}
+
+async function ensureSchema() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "categories" (
+      "id" serial PRIMARY KEY,
+      "name" text NOT NULL,
+      "slug" text NOT NULL UNIQUE,
+      "description" text DEFAULT '' NOT NULL,
+      "image_url" text,
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "is_active" boolean DEFAULT true NOT NULL,
+      "show_on_home" boolean DEFAULT true NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "products" (
+      "id" serial PRIMARY KEY,
+      "name" text NOT NULL,
+      "slug" text NOT NULL UNIQUE,
+      "short_description" text DEFAULT '' NOT NULL,
+      "description" text DEFAULT '' NOT NULL,
+      "price" integer NOT NULL,
+      "old_price" integer,
+      "category_id" integer REFERENCES "categories"("id") ON DELETE SET NULL,
+      "specifications" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "variants" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "stock" integer DEFAULT 0 NOT NULL,
+      "is_featured" boolean DEFAULT false NOT NULL,
+      "is_new" boolean DEFAULT false NOT NULL,
+      "is_available" boolean DEFAULT true NOT NULL,
+      "popularity" integer DEFAULT 0 NOT NULL,
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "seo_title" text,
+      "seo_description" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "product_images" (
+      "id" serial PRIMARY KEY,
+      "product_id" integer NOT NULL REFERENCES "products"("id") ON DELETE CASCADE,
+      "url" text NOT NULL,
+      "kind" text DEFAULT 'main' NOT NULL,
+      "alt" text DEFAULT '' NOT NULL,
+      "color_variant" text,
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "media_id" integer,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "media" (
+      "id" serial PRIMARY KEY,
+      "filename" text NOT NULL,
+      "mime_type" text NOT NULL,
+      "size" integer NOT NULL,
+      "data" bytea NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "reviews" (
+      "id" serial PRIMARY KEY,
+      "product_id" integer REFERENCES "products"("id") ON DELETE SET NULL,
+      "author_name" text NOT NULL,
+      "text" text NOT NULL,
+      "rating" integer DEFAULT 5 NOT NULL,
+      "photo_url" text,
+      "is_visible" boolean DEFAULT true NOT NULL,
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "orders" (
+      "id" serial PRIMARY KEY,
+      "number" text NOT NULL UNIQUE,
+      "customer_name" text NOT NULL,
+      "phone" text NOT NULL,
+      "email" text NOT NULL,
+      "city" text NOT NULL,
+      "delivery_method" text NOT NULL,
+      "address" text DEFAULT '' NOT NULL,
+      "comment" text DEFAULT '' NOT NULL,
+      "inn" text DEFAULT '' NOT NULL,
+      "subtotal" integer NOT NULL,
+      "delivery_cost" integer DEFAULT 0 NOT NULL,
+      "total" integer NOT NULL,
+      "status" text DEFAULT 'new' NOT NULL,
+      "payment_status" text DEFAULT 'pending' NOT NULL,
+      "payment_provider" text DEFAULT 'none' NOT NULL,
+      "payment_id" text,
+      "payment_url" text,
+      "promo_code" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "order_items" (
+      "id" serial PRIMARY KEY,
+      "order_id" integer NOT NULL REFERENCES "orders"("id") ON DELETE CASCADE,
+      "product_id" integer REFERENCES "products"("id") ON DELETE SET NULL,
+      "name" text NOT NULL,
+      "slug" text NOT NULL,
+      "price" integer NOT NULL,
+      "quantity" integer NOT NULL,
+      "image_url" text
+    );
+
+    CREATE TABLE IF NOT EXISTS "site_settings" (
+      "key" text PRIMARY KEY,
+      "value" text DEFAULT '' NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS "products_category_idx" ON "products" ("category_id");
+    CREATE INDEX IF NOT EXISTS "product_images_product_idx" ON "product_images" ("product_id");
+  `);
 }
 
 export async function setSetting(key: string, value: string) {
