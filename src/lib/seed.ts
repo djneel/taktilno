@@ -23,6 +23,8 @@ async function seed() {
   // Production DB may predate the color-variant feature. Apply this tiny,
   // idempotent schema change before any relational product query runs.
   await db.execute(sql`ALTER TABLE "product_images" ADD COLUMN IF NOT EXISTS "color_variant" text`);
+  // То же для ИНН покупателя в заказах (checkout юрлиц/ИП).
+  await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "inn" text DEFAULT '' NOT NULL`);
 
   const [flag] = await db
     .select()

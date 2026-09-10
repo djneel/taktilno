@@ -65,6 +65,7 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               <Row k="Имя" v={order.customerName} />
               <Row k="Телефон" v={<a href={`tel:${order.phone}`} className="text-green">{order.phone}</a>} />
               <Row k="E-mail" v={<a href={`mailto:${order.email}`} className="text-green">{order.email}</a>} />
+              <Row k="ИНН" v={order.inn || "—"} />
               <Row k="Дата" v={formatDate(order.createdAt)} />
               <Row k="Город" v={order.city} />
               <Row k="Способ доставки" v={getDeliveryMethodName(order.deliveryMethod)} />
