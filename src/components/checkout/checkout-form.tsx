@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { useCart } from "@/components/cart/cart-context";
 import { DELIVERY_METHODS, FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
+import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
@@ -18,6 +19,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
     city: "",
     deliveryMethod: DELIVERY_METHODS[0].id,
     address: "",
+    inn: "",
     comment: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,11 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    const innError = validateInn(form.inn);
+    if (innError) {
+      setError(innError);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/orders", {
@@ -42,6 +49,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          inn: normalizeInn(form.inn),
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, variantName: i.variantName })),
         }),
       });
@@ -79,6 +87,16 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
           <Input label="Имя" required value={form.name} onChange={set("name")} autoComplete="name" />
           <Input label="Телефон" required type="tel" value={form.phone} onChange={set("phone")} autoComplete="tel" inputMode="tel" placeholder="+7 900 000-00-00" />
           <Input label="E-mail" required type="email" value={form.email} onChange={set("email")} autoComplete="email" inputMode="email" />
+          <Input
+            label="ИНН (необязательно)"
+            value={form.inn}
+            onChange={set("inn")}
+            inputMode="numeric"
+            maxLength={12}
+            placeholder="10 или 12 цифр"
+            autoComplete="off"
+          />
+          <p className="-mt-2 text-xs text-muted">Для компаний и ИП — выставим счёт и закрывающие документы.</p>
         </Fieldset>
 
         <Fieldset title="Доставка">

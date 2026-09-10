@@ -5,6 +5,7 @@ import { getMainImage } from "./images";
 import { getDeliveryMethod, isFreeDelivery } from "./constants";
 import { getPaymentProvider } from "./payments";
 import { notifyNewOrder } from "./notifications";
+import { normalizeInn, validateInn } from "./inn";
 
 export type CheckoutInput = {
   name: string;
@@ -14,6 +15,7 @@ export type CheckoutInput = {
   deliveryMethod: string;
   address: string;
   comment?: string;
+  inn?: string;
   items: { productId: number; quantity: number; variantName?: string }[];
 };
 
@@ -32,6 +34,10 @@ export async function createOrder(input: CheckoutInput) {
   if (!phone || phone.replace(/\D/g, "").length < 10) throw new CheckoutError("Укажите корректный телефон");
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new CheckoutError("Укажите корректный e-mail");
   if (!city) throw new CheckoutError("Укажите город");
+
+  const inn = normalizeInn(input.inn ?? "");
+  const innError = validateInn(inn);
+  if (innError) throw new CheckoutError(innError);
 
   const delivery = getDeliveryMethod(input.deliveryMethod);
   if (!delivery) throw new CheckoutError("Выберите способ доставки");
@@ -90,6 +96,7 @@ export async function createOrder(input: CheckoutInput) {
         deliveryMethod: delivery.id,
         address: input.address?.trim() ?? "",
         comment: input.comment?.trim() ?? "",
+        inn,
         subtotal,
         deliveryCost,
         total,
