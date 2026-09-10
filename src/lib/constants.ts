@@ -28,8 +28,11 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: "Возврат",
 };
 
+export type DeliveryProvider = "cdek" | "ozon" | "yandex" | "russian_post";
+
 export type DeliveryMethod = {
   id: string;
+  provider: DeliveryProvider;
   name: string;
   description: string;
   cost: number | null; // null — рассчитывается менеджером
@@ -37,41 +40,109 @@ export type DeliveryMethod = {
   addressLabel: string;
 };
 
-/** Способы доставки. Расчёт через API СДЭК/Boxberry можно подключить в src/lib/delivery.ts */
-export const DELIVERY_METHODS: DeliveryMethod[] = [
+/**
+ * Доступные покупателю службы доставки.
+ *
+ * При сумме товаров от FREE_DELIVERY_THRESHOLD доставка бесплатна. Ниже порога
+ * тариф определяется для каждого заказа отдельно: до подключения API перевозчиков
+ * покупатель видит честное «По расчёту», а менеджер уточняет стоимость после оформления.
+ * Идентификатор способа сохраняется в orders.delivery_method.
+ */
+/** Бесплатная доставка применяется только к текущим активным способам. */
+export const FREE_DELIVERY_THRESHOLD = 2_000;
+
+export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
     id: "cdek_pvz",
+    provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "3–7 дней по России",
-    cost: 350,
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
     needsAddress: true,
-    addressLabel: "Адрес пункта выдачи",
+    addressLabel: "Адрес пункта выдачи СДЭК",
   },
   {
+    id: "ozon_pvz",
+    provider: "ozon",
+    name: "Ozon — пункт выдачи",
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
+    needsAddress: true,
+    addressLabel: "Адрес пункта выдачи Ozon",
+  },
+  {
+    id: "yandex_pvz",
+    provider: "yandex",
+    name: "Яндекс Доставка — пункт выдачи",
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
+    needsAddress: true,
+    addressLabel: "Адрес пункта выдачи Яндекс Маркета",
+  },
+  {
+    id: "russian_post",
+    provider: "russian_post",
+    name: "Почта России — отделение",
+    description: "Стоимость и срок уточним после оформления",
+    cost: null,
+    needsAddress: true,
+    addressLabel: "Индекс и адрес отделения Почты России",
+  },
+];
+
+// Старые способы остаются читаемыми в карточках ранее созданных заказов.
+const LEGACY_DELIVERY_METHODS: readonly Omit<DeliveryMethod, "provider">[] = [
+  {
     id: "post",
-    name: "Почта России",
-    description: "5–14 дней",
+    name: "Почта России — отделение",
+    description: "Архивный способ доставки",
     cost: 300,
     needsAddress: true,
-    addressLabel: "Индекс и адрес",
+    addressLabel: "Индекс и адрес отделения Почты России",
   },
   {
     id: "courier",
     name: "Курьер до двери",
-    description: "Стоимость рассчитает менеджер",
-    cost: null,
+    description: "Архивный способ доставки",
+    cost: 0,
     needsAddress: true,
     addressLabel: "Адрес доставки",
   },
   {
     id: "pickup",
     name: "Самовывоз",
-    description: "Договоримся о встрече",
+    description: "Архивный способ доставки",
     cost: 0,
     needsAddress: false,
     addressLabel: "",
   },
 ];
+
+export function getDeliveryMethod(id: string) {
+  return DELIVERY_METHODS.find((method) => method.id === id);
+}
+
+export function getDeliveryMethodName(id: string) {
+  return (
+    getDeliveryMethod(id)?.name ??
+    LEGACY_DELIVERY_METHODS.find((method) => method.id === id)?.name ??
+    id
+  );
+}
+
+export function isFreeDelivery(id: string, subtotal: number, storedDeliveryCost?: number) {
+  return Boolean(getDeliveryMethod(id)) && subtotal >= FREE_DELIVERY_THRESHOLD && (storedDeliveryCost === undefined || storedDeliveryCost === 0);
+}
+
+export function requiresDeliveryCalculation(id: string, subtotal: number, storedDeliveryCost?: number) {
+  const activeMethodIsUnquoted = getDeliveryMethod(id)?.cost === null;
+  if (!activeMethodIsUnquoted) return false;
+  // Existing orders with a saved, non-zero tariff stay historical; a current
+  // order has zero in the legacy-required column until its tariff is calculated.
+  return storedDeliveryCost === undefined
+    ? !isFreeDelivery(id, subtotal)
+    : storedDeliveryCost === 0 && !isFreeDelivery(id, subtotal, storedDeliveryCost);
+}
 
 export const SETTING_KEYS = {
   heroProductSlug: "hero_product_slug",

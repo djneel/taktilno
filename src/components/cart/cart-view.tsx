@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "./cart-context";
 import { formatPrice, pluralize } from "@/lib/utils";
+import { FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
 
 export function CartView() {
   const { items, hydrated, setQuantity, removeItem, subtotal, count } = useCart();
@@ -11,6 +12,8 @@ export function CartView() {
   if (!hydrated) {
     return <div className="mt-10 h-40 animate-pulse rounded-3xl bg-card" />;
   }
+
+  const isFreeDelivery = subtotal >= FREE_DELIVERY_THRESHOLD;
 
   if (items.length === 0) {
     return (
@@ -81,17 +84,17 @@ export function CartView() {
       <aside className="rounded-3xl bg-card p-5 ring-1 ring-line/60 md:sticky md:top-24 sm:p-6">
         <div className="flex items-center justify-between text-sm text-muted">
           <span>
-            {count} {pluralize(count, ["товар", "товара", "товаров"])}
+            Товары · {count} {pluralize(count, ["товар", "товара", "товаров"])}
           </span>
           <span>{formatPrice(subtotal)}</span>
         </div>
         <div className="mt-1 flex items-center justify-between text-sm text-muted">
           <span>Доставка</span>
-          <span>на следующем шаге</span>
+          <span>{isFreeDelivery ? "Бесплатно" : "По расчёту"}</span>
         </div>
         <div className="mt-4 flex items-baseline justify-between border-t border-line pt-4">
-          <span className="text-base font-bold">Итого</span>
-          <span className="text-2xl font-extrabold tracking-tight">{formatPrice(subtotal)}</span>
+          <span className="text-base font-bold">{isFreeDelivery ? "Итого" : "Итого после расчёта"}</span>
+          <span className="text-right text-2xl font-extrabold tracking-tight">{isFreeDelivery ? formatPrice(subtotal) : "По расчёту"}</span>
         </div>
         <Link
           href="/checkout"

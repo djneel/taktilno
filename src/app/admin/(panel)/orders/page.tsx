@@ -4,7 +4,7 @@ import { orders, ORDER_STATUSES, type OrderStatus } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { Badge, PageTitle } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
-import { DELIVERY_METHODS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
 import { deleteOrderAction } from "@/lib/admin-actions";
 import { cn } from "@/lib/utils";
 
@@ -46,11 +46,11 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                       <span className="font-semibold">{o.customerName}</span> · {o.phone} · {o.email}
                     </div>
                     <div className="truncate text-xs text-muted">
-                      {o.items.map((i) => `${i.name} × ${i.quantity}`).join(", ")} · {o.city} · {DELIVERY_METHODS.find((d) => d.id === o.deliveryMethod)?.name ?? o.deliveryMethod}
+                      {o.items.map((i) => `${i.name} × ${i.quantity}`).join(", ")} · {o.city} · {getDeliveryMethodName(o.deliveryMethod)}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <span className="font-bold">{formatPrice(o.total)}</span>
+                    <span className="font-bold">{requiresDeliveryCalculation(o.deliveryMethod, o.subtotal, o.deliveryCost) ? "По расчёту" : formatPrice(o.total)}</span>
                     <Badge tone={o.paymentStatus === "paid" ? "green" : "pink"}>{PAYMENT_STATUS_LABELS[o.paymentStatus]}</Badge>
                     <Badge tone={o.status === "new" ? "green" : "muted"}>{ORDER_STATUS_LABELS[o.status]}</Badge>
                   </div>
