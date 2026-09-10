@@ -35,8 +35,11 @@ export function Footer({ telegram, vk }: { telegram?: string; vk?: string }) {
             ]}
           />
         </div>
-        <div className="mt-12 flex flex-col gap-3 border-t border-line pt-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-          <span>© 2026 ТАКТИЛЬНО</span>
+        <div className="mt-12 flex flex-col gap-3 border-t border-line pt-6 text-xs text-muted sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <span>ИНН 233908290142</span>
+            <span>© 2026 ТАКТИЛЬНО</span>
+          </div>
           <Link href="/admin" className="transition-colors hover:text-fg">
             Вход для администратора
           </Link>
