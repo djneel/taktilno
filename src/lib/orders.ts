@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { orders, orderItems, products, type OrderStatus, type PaymentStatus } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getMainImage } from "./images";
-import { getDeliveryMethod, isFreeDelivery } from "./constants";
+import { FIXED_DELIVERY_COST, getDeliveryMethod, isFreeDelivery } from "./constants";
 import { getPaymentProvider } from "./payments";
 import { notifyNewOrder } from "./notifications";
 import { normalizeInn, validateInn } from "./inn";
@@ -77,12 +77,10 @@ export async function createOrder(input: CheckoutInput) {
 
   const subtotal = lines.reduce((s, l) => s + l.product.price * l.quantity, 0);
   const deliveryIsFree = isFreeDelivery(delivery.id, subtotal);
-  // В текущей схеме delivery_cost обязателен. Для заказа ниже порога ноль —
-  // служебное значение старой схемы, а не стоимость доставки: UI и оплата
-  // определяют состояние «По расчёту» по активному способу и сумме товаров.
-  const deliveryCost = deliveryIsFree ? 0 : delivery.cost ?? 0;
+  // Стоимость доставки известна сразу: 300 ₽ ниже порога и бесплатно от 2 000 ₽.
+  // Она рассчитывается на сервере, чтобы клиент не мог изменить итоговую сумму.
+  const deliveryCost = deliveryIsFree ? 0 : FIXED_DELIVERY_COST;
   const total = subtotal + deliveryCost;
-  const hasFinalTotal = deliveryIsFree || delivery.cost !== null;
 
   const created = await db.transaction(async (tx) => {
     const [order] = await tx
@@ -102,8 +100,7 @@ export async function createOrder(input: CheckoutInput) {
         total,
         status: "new",
         paymentStatus: "pending",
-        // Пока стоимость доставки не рассчитана, платёж не создаём: итоговая сумма ещё неизвестна.
-        paymentProvider: hasFinalTotal ? getPaymentProvider().id : "manual",
+        paymentProvider: getPaymentProvider().id,
       })
       .returning();
 
@@ -136,32 +133,29 @@ export async function createOrder(input: CheckoutInput) {
     return { ...order, number };
   });
 
-  // Платёж создаём только когда известна итоговая сумма. При «По расчёту»
-  // менеджер сначала подтверждает стоимость доставки покупателю.
+  // Итоговая сумма известна сразу, поэтому платёж можно создать сразу после заказа.
   let paymentUrl: string | null = null;
   let paymentMode: "redirect" | "manual" = "manual";
-  if (hasFinalTotal) {
-    const provider = getPaymentProvider();
-    try {
-      const result = await provider.createPayment({
-        orderId: created.id,
-        orderNumber: created.number,
-        amount: total,
-        description: `Заказ ${created.number} — ТАКТИЛЬНО`,
-        customerEmail: email,
-        customerPhone: phone,
-      });
-      if (result.kind === "redirect") {
-        paymentUrl = result.url;
-        paymentMode = "redirect";
-        await db
-          .update(orders)
-          .set({ paymentId: result.paymentId, paymentUrl: result.url, paymentProvider: result.provider })
-          .where(eq(orders.id, created.id));
-      }
-    } catch (e) {
-      console.error("[payments] Не удалось создать платёж:", e);
+  const provider = getPaymentProvider();
+  try {
+    const result = await provider.createPayment({
+      orderId: created.id,
+      orderNumber: created.number,
+      amount: total,
+      description: `Заказ ${created.number} — ТАКТИЛЬНО`,
+      customerEmail: email,
+      customerPhone: phone,
+    });
+    if (result.kind === "redirect") {
+      paymentUrl = result.url;
+      paymentMode = "redirect";
+      await db
+        .update(orders)
+        .set({ paymentId: result.paymentId, paymentUrl: result.url, paymentProvider: result.provider })
+        .where(eq(orders.id, created.id));
     }
+  } catch (e) {
+    console.error("[payments] Не удалось создать платёж:", e);
   }
 
   const full = await db.query.orders.findFirst({
@@ -176,7 +170,7 @@ export async function createOrder(input: CheckoutInput) {
     }
   }
 
-  return { orderNumber: created.number, paymentUrl, paymentMode, total: hasFinalTotal ? total : null };
+  return { orderNumber: created.number, paymentUrl, paymentMode, total };
 }
 
 export async function markOrderPaid(opts: { paymentId?: string; orderNumber?: string }) {

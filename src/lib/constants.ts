@@ -35,29 +35,28 @@ export type DeliveryMethod = {
   provider: DeliveryProvider;
   name: string;
   description: string;
-  cost: number | null; // null — рассчитывается менеджером
+  cost: number;
   needsAddress: boolean;
   addressLabel: string;
 };
 
-/**
- * Доступные покупателю службы доставки.
- *
- * При сумме товаров от FREE_DELIVERY_THRESHOLD доставка бесплатна. Ниже порога
- * тариф определяется для каждого заказа отдельно: до подключения API перевозчиков
- * покупатель видит честное «По расчёту», а менеджер уточняет стоимость после оформления.
- * Идентификатор способа сохраняется в orders.delivery_method.
- */
-/** Бесплатная доставка применяется только к текущим активным способам. */
+/** Бесплатная доставка применяется при достижении порога по товарам. */
 export const FREE_DELIVERY_THRESHOLD = 2_000;
 
+/** Единый временный тариф для всех способов доставки ниже порога. */
+export const FIXED_DELIVERY_COST = 300;
+
+/**
+ * Доступные покупателю службы доставки.
+ * Идентификатор выбранного способа сохраняется в orders.delivery_method.
+ */
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
     id: "cdek_pvz",
     provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "Стоимость и срок уточним после оформления",
-    cost: null,
+    description: "Фиксированная стоимость доставки — 300 ₽",
+    cost: FIXED_DELIVERY_COST,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи СДЭК",
   },
@@ -65,8 +64,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "ozon_pvz",
     provider: "ozon",
     name: "Ozon — пункт выдачи",
-    description: "Стоимость и срок уточним после оформления",
-    cost: null,
+    description: "Фиксированная стоимость доставки — 300 ₽",
+    cost: FIXED_DELIVERY_COST,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Ozon",
   },
@@ -74,8 +73,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "yandex_pvz",
     provider: "yandex",
     name: "Яндекс Доставка — пункт выдачи",
-    description: "Стоимость и срок уточним после оформления",
-    cost: null,
+    description: "Фиксированная стоимость доставки — 300 ₽",
+    cost: FIXED_DELIVERY_COST,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Яндекс Маркета",
   },
@@ -83,8 +82,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "russian_post",
     provider: "russian_post",
     name: "Почта России — отделение",
-    description: "Стоимость и срок уточним после оформления",
-    cost: null,
+    description: "Фиксированная стоимость доставки — 300 ₽",
+    cost: FIXED_DELIVERY_COST,
     needsAddress: true,
     addressLabel: "Индекс и адрес отделения Почты России",
   },
@@ -130,18 +129,14 @@ export function getDeliveryMethodName(id: string) {
   );
 }
 
-export function isFreeDelivery(id: string, subtotal: number, storedDeliveryCost?: number) {
-  return Boolean(getDeliveryMethod(id)) && subtotal >= FREE_DELIVERY_THRESHOLD && (storedDeliveryCost === undefined || storedDeliveryCost === 0);
+export function isFreeDelivery(id: string, subtotal: number) {
+  return Boolean(getDeliveryMethod(id)) && subtotal >= FREE_DELIVERY_THRESHOLD;
 }
 
-export function requiresDeliveryCalculation(id: string, subtotal: number, storedDeliveryCost?: number) {
-  const activeMethodIsUnquoted = getDeliveryMethod(id)?.cost === null;
-  if (!activeMethodIsUnquoted) return false;
-  // Existing orders with a saved, non-zero tariff stay historical; a current
-  // order has zero in the legacy-required column until its tariff is calculated.
-  return storedDeliveryCost === undefined
-    ? !isFreeDelivery(id, subtotal)
-    : storedDeliveryCost === 0 && !isFreeDelivery(id, subtotal, storedDeliveryCost);
+export function getDeliveryCost(id: string, subtotal: number) {
+  const method = getDeliveryMethod(id);
+  if (!method) return 0;
+  return isFreeDelivery(id, subtotal) ? 0 : method.cost;
 }
 
 export const SETTING_KEYS = {
