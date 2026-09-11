@@ -11,7 +11,7 @@
  */
 
 import type { Order, OrderItem } from "@/db/schema";
-import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 
 export interface NotificationChannel {
@@ -47,16 +47,15 @@ const channels: NotificationChannel[] = [telegramChannel];
 
 export function formatOrderMessage(order: Order & { items: OrderItem[] }) {
   const delivery = getDeliveryMethodName(order.deliveryMethod);
-  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal, order.deliveryCost);
-  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod, order.subtotal, order.deliveryCost);
+  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal);
   const lines = [
     `<b>Новый заказ ${order.number}</b>`,
     ``,
     ...order.items.map((i) => `• ${i.name} × ${i.quantity} — ${formatPrice(i.price * i.quantity)}`),
     ``,
     `Товары: <b>${formatPrice(order.subtotal)}</b>`,
-    `Доставка: ${deliveryNeedsCalculation ? "по расчёту" : deliveryIsFree ? "бесплатно" : formatPrice(order.deliveryCost)}`,
-    deliveryNeedsCalculation ? "Итого: <b>по расчёту</b>" : `Итого: <b>${formatPrice(order.total)}</b>`,
+    `Доставка: ${deliveryIsFree ? "бесплатно" : formatPrice(order.deliveryCost)}`,
+    `Итого: <b>${formatPrice(order.total)}</b>`,
     `Оплата: ${PAYMENT_STATUS_LABELS[order.paymentStatus]}`,
     ``,
     `${order.customerName}`,

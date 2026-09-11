@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { useCart } from "@/components/cart/cart-context";
-import { DELIVERY_METHODS, FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
+import { DELIVERY_METHODS, FIXED_DELIVERY_COST, FREE_DELIVERY_THRESHOLD, getDeliveryCost } from "@/lib/constants";
 import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
 
@@ -26,10 +26,9 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const [loading, setLoading] = useState(false);
 
   const delivery = DELIVERY_METHODS.find((d) => d.id === form.deliveryMethod)!;
-  const deliveryCost = delivery.cost;
   const isFreeDelivery = subtotal >= FREE_DELIVERY_THRESHOLD;
-  const needsDeliveryCalculation = !isFreeDelivery && deliveryCost === null;
-  const total = subtotal + (isFreeDelivery ? 0 : deliveryCost ?? 0);
+  const deliveryCost = getDeliveryCost(form.deliveryMethod, subtotal);
+  const total = subtotal + deliveryCost;
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -102,7 +101,9 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         <Fieldset title="Доставка">
           <Input label="Город" required value={form.city} onChange={set("city")} autoComplete="address-level2" />
           <p className="-mt-1 text-sm text-muted">Выберите службу и укажите удобный пункт выдачи или отделение.</p>
-          <p className="-mt-2 text-sm text-green">Бесплатная доставка при заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)}.</p>
+          <p className="-mt-2 text-sm text-muted">
+            Доставка — {formatPrice(FIXED_DELIVERY_COST)}. Бесплатно при заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)}.
+          </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {DELIVERY_METHODS.map((d) => (
               <label
@@ -125,7 +126,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   <span className="block text-xs text-muted">{d.description}</span>
                 </span>
                 <span className="text-right text-sm font-bold text-green">
-                  {isFreeDelivery ? "Бесплатно" : d.cost === null ? "По расчёту" : d.cost === 0 ? "Бесплатно" : formatPrice(d.cost)}
+                  {isFreeDelivery ? "Бесплатно" : formatPrice(d.cost)}
                 </span>
               </label>
             ))}
@@ -163,12 +164,10 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         </ul>
         <div className="mt-5 space-y-1.5 border-t border-line pt-4 text-sm">
           <Row label="Товары" value={formatPrice(subtotal)} />
-          <Row label="Доставка" value={isFreeDelivery ? "Бесплатно" : needsDeliveryCalculation ? "По расчёту" : deliveryCost === 0 ? "Бесплатно" : formatPrice(deliveryCost ?? 0)} />
+          <Row label="Доставка" value={isFreeDelivery ? "Бесплатно" : formatPrice(deliveryCost)} />
           <div className="flex items-baseline justify-between pt-2">
-            <span className="text-base font-bold">{needsDeliveryCalculation ? "Итого после расчёта" : "Итого"}</span>
-            <span className="text-right text-2xl font-extrabold tracking-tight">
-              {needsDeliveryCalculation ? "По расчёту" : formatPrice(total)}
-            </span>
+            <span className="text-base font-bold">Итого</span>
+            <span className="text-right text-2xl font-extrabold tracking-tight">{formatPrice(total)}</span>
           </div>
         </div>
 
@@ -179,14 +178,12 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
           disabled={loading}
           className="mt-5 flex h-14 w-full items-center justify-center rounded-full bg-green text-sm font-bold uppercase tracking-wider text-bg transition-transform disabled:opacity-60 md:hover:scale-[1.02]"
         >
-          {loading ? "Оформляем…" : needsDeliveryCalculation ? "Оформить заказ" : "Оплатить заказ"}
+          {loading ? "Оформляем…" : onlinePayment ? "Оплатить заказ" : "Оформить заказ"}
         </button>
         <p className="mt-3 text-center text-xs text-muted">
-          {needsDeliveryCalculation
-            ? "Сначала рассчитаем доставку, затем свяжемся с вами и пришлём итоговую сумму для оплаты."
-            : onlinePayment
-              ? "После нажатия вы перейдёте на защищённую страницу оплаты ЮKassa."
-              : "Онлайн-оплата пока подключается. Заказ будет принят, и мы свяжемся с вами для оплаты."}
+          {onlinePayment
+            ? "После нажатия вы перейдёте на защищённую страницу оплаты ЮKassa."
+            : "Заказ будет принят, и мы свяжемся с вами для оплаты."}
         </p>
       </aside>
     </form>

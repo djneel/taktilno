@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS, requiresDeliveryCalculation } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Заказ принят", robots: { index: false } };
 
@@ -17,8 +17,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
   });
   if (!order) notFound();
   const delivery = getDeliveryMethodName(order.deliveryMethod);
-  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal, order.deliveryCost);
-  const deliveryNeedsCalculation = requiresDeliveryCalculation(order.deliveryMethod, order.subtotal, order.deliveryCost);
+  const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal);
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-12 text-center sm:px-6 md:pt-20">
@@ -32,9 +31,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
         <p className="mx-auto mt-6 max-w-md text-base text-muted">
           Спасибо за заказ!
           <br />
-          {deliveryNeedsCalculation
-            ? "Мы свяжемся с вами по указанным контактам, чтобы подтвердить стоимость доставки."
-            : "Информация о заказе будет отправлена на указанные контакты."}
+          Информация о заказе будет отправлена на указанные контакты.
         </p>
 
         <div className="mx-auto mt-10 max-w-md rounded-3xl bg-card p-6 text-left ring-1 ring-line/60">
@@ -49,12 +46,12 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
           <div className="mt-4 space-y-1.5 border-t border-line pt-4 text-sm">
             <div className="flex justify-between gap-3 text-muted">
               <span>Доставка</span>
-              <span className="text-right text-fg">{delivery} · {deliveryNeedsCalculation ? "по расчёту" : deliveryIsFree ? "Бесплатно" : formatPrice(order.deliveryCost)}</span>
+              <span className="text-right text-fg">{delivery} · {deliveryIsFree ? "Бесплатно" : formatPrice(order.deliveryCost)}</span>
             </div>
             <div className="flex justify-between text-muted"><span>Оплата</span><span className="text-fg">{PAYMENT_STATUS_LABELS[order.paymentStatus]}</span></div>
             <div className="flex justify-between pt-2 text-base font-bold">
-              <span>{deliveryNeedsCalculation ? "Итого после расчёта" : "Итого"}</span>
-              <span>{deliveryNeedsCalculation ? "По расчёту" : formatPrice(order.total)}</span>
+              <span>Итого</span>
+              <span>{formatPrice(order.total)}</span>
             </div>
           </div>
           {order.paymentStatus === "pending" && order.paymentUrl && (
@@ -62,12 +59,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
               Перейти к оплате
             </a>
           )}
-          {order.paymentStatus === "pending" && deliveryNeedsCalculation && (
-            <p className="mt-5 rounded-2xl bg-bg2 p-3 text-xs text-muted">
-              Мы рассчитаем стоимость доставки, свяжемся с вами по указанным контактам и пришлём итоговую сумму для оплаты.
-            </p>
-          )}
-          {order.paymentStatus === "pending" && !order.paymentUrl && !deliveryNeedsCalculation && (
+          {order.paymentStatus === "pending" && !order.paymentUrl && (
             <p className="mt-5 rounded-2xl bg-bg2 p-3 text-xs text-muted">
               Онлайн-оплата пока подключается. Мы свяжемся с вами по указанным контактам и пришлём способ оплаты.
             </p>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DELIVERY_METHODS, FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
+import { DELIVERY_METHODS, FIXED_DELIVERY_COST, FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -25,7 +25,7 @@ export default function DeliveryPage() {
           <div key={d.id} className="rounded-3xl bg-card p-5 ring-1 ring-line/60">
             <div className="flex items-start justify-between gap-3">
               <div className="text-lg font-bold">{d.name}</div>
-              <div className="text-sm font-bold text-green">По расчёту</div>
+              <div className="text-sm font-bold text-green">{formatPrice(FIXED_DELIVERY_COST)}</div>
             </div>
             <p className="mt-1 text-sm text-muted">{d.description}</p>
           </div>
@@ -35,11 +35,9 @@ export default function DeliveryPage() {
       <section id="payment" className="mt-16 scroll-mt-24">
         <h2 className="heading text-3xl sm:text-4xl">Оплата</h2>
         <div className="mt-4 space-y-3 text-muted">
-          <p>При заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)} доставка бесплатна, а итоговая сумма видна на оформлении.</p>
-          <p>
-            Если сумма меньше, после оформления мы рассчитаем доставку, свяжемся с вами и пришлём итоговую сумму и способ оплаты.
-          </p>
-          <p>Стоимость фигурок фиксируется в момент оформления заказа.</p>
+          <p>При заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)} доставка бесплатна.</p>
+          <p>Если сумма меньше, доставка стоит {formatPrice(FIXED_DELIVERY_COST)} независимо от выбранной службы.</p>
+          <p>Стоимость фигурок и доставки фиксируется в момент оформления заказа.</p>
         </div>
       </section>
 
