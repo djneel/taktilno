@@ -22,7 +22,8 @@
  *
  * Переменные окружения (см. .env.example):
  *   POCHTA_FROM_INDEX            — индекс пункта отправления (Краснодар)
- *   POCHTA_TARIFF_OBJECT         — код объекта тарификации (по умолчанию 27030 «Посылка стандарт»)
+ *   POCHTA_TARIFF_OBJECT         — код объекта тарификации (по умолчанию 23030 «Посылка онлайн»;
+ *                                  если объект недоступен, автоматически перебираются запасные)
  *   POCHTA_DEFAULT_ITEM_WEIGHT_G — вес одного изделия по умолчанию, г
  *   POCHTA_PACKAGING_WEIGHT_G    — вес упаковки посылки, г
  *   POCHTA_MAX_WEIGHT_G          — предел веса для онлайн-расчёта, г
@@ -60,6 +61,30 @@ const TARIFF_API = "https://tariff.pochta.ru/tariff/v1/calculate";
 const DELIVERY_API = "https://delivery.pochta.ru/delivery/v1/calculate";
 const OTPRAVKA_API = "https://otpravka.pochta.ru/1.0";
 
+// Запасные объекты тарификации для публичного тарификатора. «Посылка стандарт»
+// (27030) с 2026 года требует параметр «Упаковка» (pack) и при этом отклоняет
+// анонимные запросы с pack («нет в общем списке мест приема»), поэтому основной
+// объект без договора — «Посылка онлайн» (23030): именно этот тариф действует
+// при онлайн-отправке посылок.
+const PUBLIC_TARIFF_FALLBACK_OBJECTS = ["23030", "27030"];
+// Код упаковки для повторной попытки, когда API требует параметр pack:
+// 10 — коробка «S».
+const DEFAULT_PACK = "10";
+
+/** Логическая ошибка тарификатора (ответ получен, но расчёт отклонён). */
+class TariffApiError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TariffApiError";
+  }
+}
+
+/** Цепочка объектов тарификации без повторов: настроенный + запасные. */
+function tariffObjectChain(config: RussianPostConfig): string[] {
+  const chain = [config.tariffObject, ...PUBLIC_TARIFF_FALLBACK_OBJECTS];
+  return chain.filter((value, index) => value && chain.indexOf(value) === index);
+}
+
 const REQUEST_TIMEOUT_MS = 8_000;
 // Тарифы меняются редко — кэшируем удачные расчёты 6 часов,
 // fallback-ответы — 5 минут (чтобы не долбить упавший API).
@@ -80,7 +105,11 @@ export function getRussianPostConfig(): RussianPostConfig {
   const fromIndex = (process.env.POCHTA_FROM_INDEX ?? "350000").replace(/\D/g, "") || "350000";
   return {
     fromIndex,
-    tariffObject: (process.env.POCHTA_TARIFF_OBJECT ?? "27030").replace(/\D/g, "") || "27030",
+    // По умолчанию «Посылка онлайн» — публичный тарификатор считает её без
+    // договора; «Посылка стандарт» (27030) анонимно теперь требует параметр
+    // pack и отклоняется, поэтому при недоступности объекта код сам переберёт
+    // запасные (см. tariffObjectChain).
+    tariffObject: (process.env.POCHTA_TARIFF_OBJECT ?? "23030").replace(/\D/g, "") || "23030",
     defaultItemWeightG: numEnv("POCHTA_DEFAULT_ITEM_WEIGHT_G", 150, 10, 5000),
     packagingWeightG: numEnv("POCHTA_PACKAGING_WEIGHT_G", 150, 0, 5000),
     maxWeightG: numEnv("POCHTA_MAX_WEIGHT_G", 20_000, 1000, 31_500),
@@ -183,7 +212,7 @@ export async function getRussianPostQuote(opts: {
   // 2) Публичный тарификатор + сроки доставки.
   try {
     const [costRub, days] = await Promise.all([
-      quoteViaTarifficator(indexTo, weightGrams, declaredKopecks, config),
+      quoteViaPublicTariff(indexTo, weightGrams, declaredKopecks, config),
       quoteDeliveryDays(indexTo, weightGrams, config).catch((error) => {
         console.error("[pochta] delivery terms failed (non-fatal):", shortError(error));
         return undefined;
@@ -261,18 +290,21 @@ async function quoteViaTarifficator(
   indexTo: string,
   weightGrams: number,
   declaredKopecks: number,
-  config: RussianPostConfig
+  config: RussianPostConfig,
+  object: string,
+  pack?: string
 ): Promise<number> {
   const date = new Date();
   const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
   const url =
     `${TARIFF_API}?json` +
-    `&object=${encodeURIComponent(config.tariffObject)}` +
+    `&object=${encodeURIComponent(object)}` +
     `&from=${encodeURIComponent(config.fromIndex)}` +
     `&to=${encodeURIComponent(indexTo)}` +
     `&weight=${weightGrams}` +
     `&sumoc=${declaredKopecks}` +
-    `&date=${stamp}`;
+    `&date=${stamp}` +
+    (pack ? `&pack=${encodeURIComponent(pack)}` : "");
   const data = await fetchJson(url);
 
   const errors = Array.isArray(data.errors) ? data.errors : Array.isArray(data.error) ? data.error : [];
@@ -281,7 +313,7 @@ async function quoteViaTarifficator(
       .map((item) => (typeof item === "string" ? item : (item as { msg?: string })?.msg ?? ""))
       .filter(Boolean)
       .join("; ");
-    throw new Error(messages || "Тарификатор отклонил запрос");
+    throw new TariffApiError(messages || "Тарификатор отклонил запрос");
   }
 
   // Ответ содержит paynds (итог с НДС, коп.) и ground.valnds (наземный тариф, коп.).
@@ -302,7 +334,51 @@ async function quoteViaTarifficator(
       return Math.max(1, Math.round(kop / 100));
     }
   }
-  throw new Error("Тарификатор не вернул стоимость");
+  throw new TariffApiError("Тарификатор не вернул стоимость");
+}
+
+/**
+ * Расчёт публичным тарификатором с цепочкой объектов тарификации.
+ *
+ * Почта периодически меняет правила: так, «Посылка стандарт» (27030) стала
+ * требовать параметр «Упаковка» (pack), а анонимные запросы с pack отклоняет
+ * («нет в общем списке мест приема»). Поэтому: пробуем настроенный объект;
+ * если API просит pack — повторяем с коробкой «S»; если объект недоступен —
+ * идём по запасным (в первую очередь «Посылка онлайн», тариф онлайн-отправки).
+ * Сетевые ошибки цепочку не продолжают, чтобы не тянуть таймауты.
+ */
+async function quoteViaPublicTariff(
+  indexTo: string,
+  weightGrams: number,
+  declaredKopecks: number,
+  config: RussianPostConfig
+): Promise<number> {
+  let lastError: unknown;
+  for (const object of tariffObjectChain(config)) {
+    try {
+      return await quoteViaTarifficator(indexTo, weightGrams, declaredKopecks, config, object);
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof TariffApiError)) throw error;
+      if (/pack|упаковк/i.test(error.message)) {
+        try {
+          return await quoteViaTarifficator(
+            indexTo,
+            weightGrams,
+            declaredKopecks,
+            config,
+            object,
+            DEFAULT_PACK
+          );
+        } catch (retryError) {
+          lastError = retryError;
+          if (!(retryError instanceof TariffApiError)) throw retryError;
+        }
+      }
+      // Иначе переходим к следующему объекту цепочки.
+    }
+  }
+  throw lastError instanceof Error ? lastError : new TariffApiError("Тарификатор не вернул стоимость");
 }
 
 /** Публичные сроки доставки: https://delivery.pochta.ru. Best-effort. */
@@ -311,24 +387,42 @@ async function quoteDeliveryDays(
   weightGrams: number,
   config: RussianPostConfig
 ): Promise<{ minDays: number; maxDays: number } | undefined> {
-  const url =
-    `${DELIVERY_API}?json` +
-    `&object=${encodeURIComponent(config.tariffObject)}` +
-    `&from=${encodeURIComponent(config.fromIndex)}` +
-    `&to=${encodeURIComponent(indexTo)}` +
-    `&weight=${weightGrams}`;
-  const data = await fetchJson(url);
-  const pick = (...keys: string[]) => {
-    for (const key of keys) {
-      const value = Number(data[key]);
-      if (Number.isFinite(value) && value > 0 && value < 365) return Math.round(value);
+  let lastError: unknown;
+  for (const object of tariffObjectChain(config)) {
+    const url =
+      `${DELIVERY_API}?json` +
+      `&object=${encodeURIComponent(object)}` +
+      `&from=${encodeURIComponent(config.fromIndex)}` +
+      `&to=${encodeURIComponent(indexTo)}` +
+      `&weight=${weightGrams}`;
+    const data = await fetchJson(url);
+    const errors = Array.isArray(data.errors) ? data.errors : Array.isArray(data.error) ? data.error : [];
+    if (errors.length > 0) {
+      lastError = new TariffApiError("Сервис сроков доставки отклонил запрос");
+      continue; // объект недоступен — пробуем следующий
     }
-    return undefined;
-  };
-  const minDays = pick("min-days", "minDays", "deliveryPeriodMin", "periodMin", "min");
-  const maxDays = pick("max-days", "maxDays", "deliveryPeriodMax", "periodMax", "max");
-  if (minDays === undefined && maxDays === undefined) return undefined;
-  return { minDays: minDays ?? maxDays!, maxDays: maxDays ?? minDays! };
+    // Сроки лежат либо в верхнем уровне, либо во вложенном объекте delivery
+    // (формат ответа менялся от объекта к объекту).
+    const delivery = (data.delivery ?? {}) as Record<string, unknown>;
+    const pick = (source: Record<string, unknown>, ...keys: string[]) => {
+      for (const key of keys) {
+        const value = Number(source[key]);
+        if (Number.isFinite(value) && value > 0 && value < 365) return Math.round(value);
+      }
+      return undefined;
+    };
+    const minDays =
+      pick(data, "min-days", "minDays", "deliveryPeriodMin", "periodMin") ??
+      pick(delivery, "min", "min-days", "minDays");
+    const maxDays =
+      pick(data, "max-days", "maxDays", "deliveryPeriodMax", "periodMax") ??
+      pick(delivery, "max", "max-days", "maxDays");
+    if (minDays !== undefined || maxDays !== undefined) {
+      return { minDays: minDays ?? maxDays!, maxDays: maxDays ?? minDays! };
+    }
+    lastError = new TariffApiError("Сервис сроков не вернул сроки");
+  }
+  throw lastError instanceof Error ? lastError : new Error("Не удалось получить сроки доставки");
 }
 
 /** API «Отправка» по договору: POST /1.0/tariff, суммы в копейках. */
