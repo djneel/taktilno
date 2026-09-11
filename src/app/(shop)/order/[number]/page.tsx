@@ -48,7 +48,10 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
               <span>Доставка</span>
               <span className="text-right text-fg">{delivery} · {deliveryIsFree ? "Бесплатно" : formatPrice(order.deliveryCost)}</span>
             </div>
-            <div className="flex justify-between text-muted"><span>Оплата</span><span className="text-fg">{PAYMENT_STATUS_LABELS[order.paymentStatus]}</span></div>
+            <div className="flex justify-between gap-3 text-muted">
+              <span>Оплата</span>
+              <span className="text-right text-fg">ЮKassa · {PAYMENT_STATUS_LABELS[order.paymentStatus]}</span>
+            </div>
             <div className="flex justify-between pt-2 text-base font-bold">
               <span>Итого</span>
               <span>{formatPrice(order.total)}</span>
@@ -60,8 +63,8 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
             </a>
           )}
           {order.paymentStatus === "pending" && !order.paymentUrl && (
-            <p className="mt-5 rounded-2xl bg-bg2 p-3 text-xs text-muted">
-              Онлайн-оплата пока подключается. Мы свяжемся с вами по указанным контактам и пришлём способ оплаты.
+            <p className="mt-5 rounded-2xl bg-pink/10 p-3 text-xs text-pink">
+              Ссылка ЮKassa недоступна. Другого способа оплаты нет — попробуйте оформить заказ заново или свяжитесь с нами.
             </p>
           )}
         </div>

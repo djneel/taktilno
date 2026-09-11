@@ -28,7 +28,7 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: "Возврат",
 };
 
-export type DeliveryProvider = "cdek" | "ozon" | "yandex" | "russian_post";
+export type DeliveryProvider = "cdek" | "ozon" | "yandex" | "russian_post" | "pickup";
 
 export type DeliveryMethod = {
   id: string;
@@ -36,6 +36,7 @@ export type DeliveryMethod = {
   name: string;
   description: string;
   cost: number;
+  needsCity: boolean;
   needsAddress: boolean;
   addressLabel: string;
 };
@@ -43,11 +44,18 @@ export type DeliveryMethod = {
 /** Бесплатная доставка применяется при достижении порога по товарам. */
 export const FREE_DELIVERY_THRESHOLD = 2_000;
 
-/** Единый временный тариф для всех способов доставки ниже порога. */
+/** Единый тариф для служб доставки ниже порога бесплатной доставки. */
 export const FIXED_DELIVERY_COST = 300;
 
+export const PICKUP_CITY = "Краснодар";
+export const PICKUP_ADDRESS = "Краснодар, ул. Базовская Дамба, 4";
+export const PICKUP_HOURS = "с 9:00 до 20:00";
+
+/** Единственный доступный способ оплаты заказа. */
+export const ONLINE_PAYMENT_METHOD = "yookassa" as const;
+
 /**
- * Доступные покупателю службы доставки.
+ * Доступные покупателю способы получения заказа.
  * Идентификатор выбранного способа сохраняется в orders.delivery_method.
  */
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
@@ -55,8 +63,9 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "cdek_pvz",
     provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "Фиксированная стоимость доставки — 300 ₽",
+    description: "Доставка в выбранный пункт СДЭК",
     cost: FIXED_DELIVERY_COST,
+    needsCity: true,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи СДЭК",
   },
@@ -64,8 +73,9 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "ozon_pvz",
     provider: "ozon",
     name: "Ozon — пункт выдачи",
-    description: "Фиксированная стоимость доставки — 300 ₽",
+    description: "Доставка в выбранный пункт Ozon",
     cost: FIXED_DELIVERY_COST,
+    needsCity: true,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Ozon",
   },
@@ -73,8 +83,9 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "yandex_pvz",
     provider: "yandex",
     name: "Яндекс Доставка — пункт выдачи",
-    description: "Фиксированная стоимость доставки — 300 ₽",
+    description: "Доставка в выбранный пункт Яндекс Маркета",
     cost: FIXED_DELIVERY_COST,
+    needsCity: true,
     needsAddress: true,
     addressLabel: "Адрес пункта выдачи Яндекс Маркета",
   },
@@ -82,39 +93,28 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: "russian_post",
     provider: "russian_post",
     name: "Почта России — отделение",
-    description: "Фиксированная стоимость доставки — 300 ₽",
+    description: "Доставка в выбранное почтовое отделение",
     cost: FIXED_DELIVERY_COST,
+    needsCity: true,
     needsAddress: true,
     addressLabel: "Индекс и адрес отделения Почты России",
+  },
+  {
+    id: "pickup",
+    provider: "pickup",
+    name: "Самовывоз",
+    description: `${PICKUP_ADDRESS} · ${PICKUP_HOURS}`,
+    cost: 0,
+    needsCity: false,
+    needsAddress: false,
+    addressLabel: "",
   },
 ];
 
 // Старые способы остаются читаемыми в карточках ранее созданных заказов.
-const LEGACY_DELIVERY_METHODS: readonly Omit<DeliveryMethod, "provider">[] = [
-  {
-    id: "post",
-    name: "Почта России — отделение",
-    description: "Архивный способ доставки",
-    cost: 300,
-    needsAddress: true,
-    addressLabel: "Индекс и адрес отделения Почты России",
-  },
-  {
-    id: "courier",
-    name: "Курьер до двери",
-    description: "Архивный способ доставки",
-    cost: 0,
-    needsAddress: true,
-    addressLabel: "Адрес доставки",
-  },
-  {
-    id: "pickup",
-    name: "Самовывоз",
-    description: "Архивный способ доставки",
-    cost: 0,
-    needsAddress: false,
-    addressLabel: "",
-  },
+const LEGACY_DELIVERY_METHODS: readonly { id: string; name: string }[] = [
+  { id: "post", name: "Почта России — отделение" },
+  { id: "courier", name: "Курьер до двери" },
 ];
 
 export function getDeliveryMethod(id: string) {
@@ -129,8 +129,13 @@ export function getDeliveryMethodName(id: string) {
   );
 }
 
+export function isPickup(id: string) {
+  return getDeliveryMethod(id)?.provider === "pickup";
+}
+
 export function isFreeDelivery(id: string, subtotal: number) {
-  return Boolean(getDeliveryMethod(id)) && subtotal >= FREE_DELIVERY_THRESHOLD;
+  const method = getDeliveryMethod(id);
+  return Boolean(method && (method.cost === 0 || subtotal >= FREE_DELIVERY_THRESHOLD));
 }
 
 export function getDeliveryCost(id: string, subtotal: number) {

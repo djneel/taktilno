@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "./cart-context";
 import { formatPrice, pluralize } from "@/lib/utils";
-import { FIXED_DELIVERY_COST, FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
+import { FIXED_DELIVERY_COST, FREE_DELIVERY_THRESHOLD, PICKUP_ADDRESS } from "@/lib/constants";
 
 export function CartView() {
   const { items, hydrated, setQuantity, removeItem, subtotal, count } = useCart();
@@ -95,9 +95,12 @@ export function CartView() {
           <span>{isFreeDelivery ? "Бесплатно" : formatPrice(deliveryCost)}</span>
         </div>
         <div className="mt-4 flex items-baseline justify-between border-t border-line pt-4">
-          <span className="text-base font-bold">Итого</span>
+          <span className="text-base font-bold">Итого с доставкой</span>
           <span className="text-right text-2xl font-extrabold tracking-tight">{formatPrice(total)}</span>
         </div>
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          Самовывоз ({PICKUP_ADDRESS}) бесплатный. Итог обновится после выбора способа получения.
+        </p>
         <Link
           href="/checkout"
           className="mt-5 flex h-14 items-center justify-center rounded-full bg-green text-sm font-bold uppercase tracking-wider text-bg transition-transform md:hover:scale-[1.02]"
