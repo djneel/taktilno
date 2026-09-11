@@ -107,6 +107,7 @@ export async function saveProductAction(formData: FormData) {
     categoryId: categoryIdRaw > 0 ? categoryIdRaw : null,
     specifications: specsFrom(formData),
     stock: Math.max(0, Math.round(num(formData, "stock"))),
+    weightGrams: Math.min(5000, Math.max(10, Math.round(num(formData, "weightGrams", 150)))),
     isFeatured: bool(formData, "isFeatured"),
     isNew: bool(formData, "isNew"),
     isAvailable: bool(formData, "isAvailable"),
@@ -314,6 +315,78 @@ export async function saveSettingsAction(formData: FormData) {
   for (const k of keys) if (formData.has(k)) await setSetting(k, str(formData, k));
   const process: string[] = []; for (let i = 0; i < 5; i++) process.push(str(formData, `process_${i}`));
   await setSetting("process_images", JSON.stringify(process)); revalidateShop(); revalidatePath("/admin/settings");
+}
+
+export async function updateOrderTrackingAction(formData: FormData) {
+  await requireAdmin();
+  const id = num(formData, "id");
+  if (!id) return;
+  const { normalizeTrackingNumber, isTrackingNumber } = await import("./delivery/russian-post");
+  const raw = str(formData, "trackingNumber");
+  if (!raw) {
+    await db.update(orders).set({ trackingNumber: null, updatedAt: new Date() }).where(eq(orders.id, id));
+  } else {
+    if (!isTrackingNumber(raw)) {
+      throw new Error("Трек-номер Почты России — 14 цифр (или международный формат S10, например RA123456789RU)");
+    }
+    await db
+      .update(orders)
+      .set({ trackingNumber: normalizeTrackingNumber(raw), updatedAt: new Date() })
+      .where(eq(orders.id, id));
+  }
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function testRussianPostAction(postcode: string): Promise<{ ok: boolean; message: string }> {
+  await requireAdmin();
+  const {
+    getRussianPostConfig,
+    getRussianPostQuote,
+    isOtpravkaConfigured,
+    isValidPostcode,
+    normalizeAddressViaOtpravka,
+    normalizePostcode,
+  } = await import("./delivery/russian-post");
+  const { formatPrice } = await import("./utils");
+  const config = getRussianPostConfig();
+  const index = normalizePostcode(postcode || "101000");
+  if (!isValidPostcode(index)) {
+    return { ok: false, message: `«${postcode}» — некорректный индекс. Введите 6 цифр.` };
+  }
+  try {
+    const quote = await getRussianPostQuote({ postcode: index, weightGrams: 500, declaredValueRub: 1000 });
+    const source =
+      quote.source === "otpravka"
+        ? "API «Отправка» по договору"
+        : quote.source === "tariff"
+          ? "публичный тарификатор tariff.pochta.ru"
+          : "fallback (API Почты недоступны)";
+    const days =
+      quote.minDays !== undefined || quote.maxDays !== undefined
+        ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} дн.`
+        : "";
+    let addressCheck = "";
+    if (isOtpravkaConfigured()) {
+      const normalized = await normalizeAddressViaOtpravka(`${index}, Москва, Красная площадь, 1`);
+      addressCheck = normalized
+        ? ` Нормализация адреса: OK${normalized.postcode ? ` (индекс ${normalized.postcode})` : ""}.`
+        : " Нормализация адреса: не отвечает.";
+    }
+    const otpravka = isOtpravkaConfigured()
+      ? "«Отправка» (POCHTA_TOKEN/POCHTA_KEY): настроена."
+      : "«Отправка» не настроена — работаем через публичный тариф (договор не обязателен).";
+    return {
+      ok: !quote.fallback,
+      message:
+        `Индекс ${config.fromIndex} → ${index}, 500 г: ${formatPrice(quote.cost)}${days}. Источник: ${source}. ` +
+        otpravka +
+        addressCheck,
+    };
+  } catch (e) {
+    return { ok: false, message: `Ошибка расчёта: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 export async function testTelegramAction(): Promise<{ ok: boolean; message: string }> {

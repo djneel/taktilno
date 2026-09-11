@@ -38,6 +38,8 @@ export type DeliveryMethod = {
   cost: number;
   needsCity: boolean;
   needsAddress: boolean;
+  /** Почта России дополнительно требует индекс получателя для расчёта тарифа. */
+  needsPostcode: boolean;
   addressLabel: string;
 };
 
@@ -54,6 +56,9 @@ export const PICKUP_HOURS = "с 9:00 до 20:00";
 /** Единственный доступный способ оплаты заказа. */
 export const ONLINE_PAYMENT_METHOD = "yookassa" as const;
 
+/** Идентификатор способа доставки Почтой России (тариф считается по индексу). */
+export const RUSSIAN_POST_METHOD_ID = "russian_post";
+
 /**
  * Доступные покупателю способы получения заказа.
  * Идентификатор выбранного способа сохраняется в orders.delivery_method.
@@ -67,6 +72,7 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,
+    needsPostcode: false,
     addressLabel: "Адрес пункта выдачи СДЭК",
   },
   {
@@ -77,6 +83,7 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,
+    needsPostcode: false,
     addressLabel: "Адрес пункта выдачи Ozon",
   },
   {
@@ -87,17 +94,19 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,
+    needsPostcode: false,
     addressLabel: "Адрес пункта выдачи Яндекс Маркета",
   },
   {
     id: "russian_post",
     provider: "russian_post",
     name: "Почта России — отделение",
-    description: "Доставка в выбранное почтовое отделение",
+    description: "Тариф рассчитывается по вашему индексу на сайте Почты России",
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,
-    addressLabel: "Индекс и адрес отделения Почты России",
+    needsPostcode: true,
+    addressLabel: "Улица, дом, квартира и отделение Почты России",
   },
   {
     id: "pickup",
@@ -107,6 +116,7 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     cost: 0,
     needsCity: false,
     needsAddress: false,
+    needsPostcode: false,
     addressLabel: "",
   },
 ];
@@ -138,10 +148,21 @@ export function isFreeDelivery(id: string, subtotal: number) {
   return Boolean(method && (method.cost === 0 || subtotal >= FREE_DELIVERY_THRESHOLD));
 }
 
-export function getDeliveryCost(id: string, subtotal: number) {
+export function isRussianPost(id: string) {
+  return id === RUSSIAN_POST_METHOD_ID;
+}
+
+export function getDeliveryCost(id: string, subtotal: number, opts?: { russianPostCost?: number }) {
   const method = getDeliveryMethod(id);
   if (!method) return 0;
-  return isFreeDelivery(id, subtotal) ? 0 : method.cost;
+  if (isFreeDelivery(id, subtotal)) return 0;
+  // Почта России: ниже порога бесплатной доставки берём живой тариф из API
+  // (см. src/lib/delivery/russian-post.ts); пока тарифа нет — фиксированные 300 ₽.
+  if (isRussianPost(id) && opts?.russianPostCost !== undefined) {
+    const quoted = Math.round(opts.russianPostCost);
+    return Number.isFinite(quoted) && quoted >= 0 ? quoted : method.cost;
+  }
+  return method.cost;
 }
 
 export const SETTING_KEYS = {

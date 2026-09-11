@@ -9,12 +9,14 @@ import {
   FIXED_DELIVERY_COST,
   FREE_DELIVERY_THRESHOLD,
   getDeliveryCost,
+  isRussianPost,
   ONLINE_PAYMENT_METHOD,
   PICKUP_ADDRESS,
   PICKUP_HOURS,
 } from "@/lib/constants";
 import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
+import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const { items, hydrated, subtotal, clear } = useCart();
@@ -24,6 +26,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
     email: "",
     city: "",
     deliveryMethod: DELIVERY_METHODS[0].id,
+    postcode: "",
     address: "",
     inn: "",
     comment: "",
@@ -32,7 +35,17 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const [loading, setLoading] = useState(false);
 
   const delivery = DELIVERY_METHODS.find((method) => method.id === form.deliveryMethod) ?? DELIVERY_METHODS[0];
-  const deliveryCost = getDeliveryCost(delivery.id, subtotal);
+  const russianPost = isRussianPost(delivery.id);
+  const { quote: pochtaQuote, loading: pochtaLoading, error: pochtaError } = useRussianPostQuote({
+    enabled: russianPost,
+    postcode: form.postcode,
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    subtotal,
+  });
+  // Почта России: живой тариф из API (сервер пересчитает авторитетно при оформлении).
+  const deliveryCost = russianPost
+    ? getDeliveryCost(delivery.id, subtotal, { russianPostCost: pochtaQuote?.mailCost })
+    : getDeliveryCost(delivery.id, subtotal);
   const deliveryIsFree = deliveryCost === 0;
   const total = subtotal + deliveryCost;
 
@@ -55,6 +68,11 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
       return;
     }
 
+    if (delivery.needsPostcode && !/^\d{6}$/.test(form.postcode.replace(/\D/g, ""))) {
+      setError("Укажите корректный индекс (6 цифр) для расчёта тарифа Почты России");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/orders", {
@@ -63,6 +81,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         body: JSON.stringify({
           ...form,
           city: delivery.needsCity ? form.city : undefined,
+          postcode: delivery.needsPostcode ? form.postcode.replace(/\D/g, "") : undefined,
           address: delivery.needsAddress ? form.address : undefined,
           paymentMethod: ONLINE_PAYMENT_METHOD,
           inn: normalizeInn(form.inn),
@@ -123,13 +142,23 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
 
         <Fieldset title="Получение заказа">
           <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-            Доставка СДЭК, Ozon, Яндексом или Почтой России — <strong className="text-fg">{formatPrice(FIXED_DELIVERY_COST)}</strong>.
+            Доставка СДЭК, Ozon или Яндексом — <strong className="text-fg">{formatPrice(FIXED_DELIVERY_COST)}</strong>,
+            Почтой России — по тарифу Почты для вашего индекса.
             От {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно. Самовывоз бесплатный при любой сумме.
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
             {DELIVERY_METHODS.map((method) => {
-              const methodIsFree = getDeliveryCost(method.id, subtotal) === 0;
+              const isPost = isRussianPost(method.id);
+              const methodCost = isPost
+                ? getDeliveryCost(method.id, subtotal, { russianPostCost: pochtaQuote?.mailCost })
+                : getDeliveryCost(method.id, subtotal);
+              const methodIsFree = methodCost === 0;
+              const methodPrice = methodIsFree
+                ? "Бесплатно"
+                : isPost
+                  ? (pochtaQuote ? formatPrice(pochtaQuote.mailCost) : pochtaLoading ? "…" : "по тарифу")
+                  : formatPrice(method.cost);
               return (
                 <label
                   key={method.id}
@@ -154,7 +183,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                     <span className="mt-0.5 block text-xs leading-relaxed text-muted">{method.description}</span>
                   </span>
                   <span className="shrink-0 text-right text-sm font-bold text-green">
-                    {methodIsFree ? "Бесплатно" : formatPrice(method.cost)}
+                    {methodPrice}
                   </span>
                 </label>
               );
@@ -169,6 +198,26 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
             </div>
           ) : (
             <>
+              {delivery.needsPostcode && (
+                <>
+                  <Input
+                    label="Почтовый индекс"
+                    required
+                    value={form.postcode}
+                    onChange={set("postcode")}
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="101000"
+                    autoComplete="postal-code"
+                  />
+                  <RussianPostQuoteInfo
+                    quote={pochtaQuote}
+                    loading={pochtaLoading}
+                    error={pochtaError}
+                    subtotal={subtotal}
+                  />
+                </>
+              )}
               <Input label="Город" required value={form.city} onChange={set("city")} autoComplete="address-level2" />
               <Input
                 label={delivery.addressLabel}

@@ -5,7 +5,8 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, isFreeDelivery, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, isRussianPost, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getRussianPostTrackingUrl } from "@/lib/delivery/russian-post";
 
 export const metadata: Metadata = { title: "Заказ принят", robots: { index: false } };
 
@@ -57,6 +58,23 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
               <span>{formatPrice(order.total)}</span>
             </div>
           </div>
+          {order.trackingNumber && (
+            <a
+              href={getRussianPostTrackingUrl(order.trackingNumber)}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-5 block rounded-2xl bg-green/10 p-4 text-center ring-1 ring-green/30"
+            >
+              <span className="block text-xs font-bold uppercase tracking-wider text-green">Отслеживание Почты России</span>
+              <span className="mt-1 block font-bold">{order.trackingNumber} ↗</span>
+            </a>
+          )}
+          {isRussianPost(order.deliveryMethod) && !order.trackingNumber && (
+            <p className="mt-5 rounded-2xl bg-bg2/60 p-3 text-xs leading-relaxed text-muted ring-1 ring-line/60">
+              Отправим посылку в течение 1–3 дней после оплаты{order.postcode ? ` на индекс ${order.postcode}` : ""}.
+              Трек-номер для отслеживания появится на этой странице.
+            </p>
+          )}
           {order.paymentStatus === "pending" && order.paymentUrl && (
             <a href={order.paymentUrl} className="mt-5 flex h-12 items-center justify-center rounded-full bg-green text-sm font-bold uppercase tracking-wider text-bg">
               Перейти к оплате

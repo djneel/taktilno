@@ -62,7 +62,7 @@ export function formatOrderMessage(order: Order & { items: OrderItem[] }) {
     `${order.phone}`,
     `${order.email}`,
     order.inn ? `ИНН: ${order.inn}` : "",
-    `${order.city} — ${delivery}`,
+    `${order.postcode ? `${order.postcode}, ` : ""}${order.city} — ${delivery}`,
     order.address ? order.address : "",
     order.comment ? `Комментарий: ${order.comment}` : "",
   ];

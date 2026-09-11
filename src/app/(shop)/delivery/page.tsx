@@ -3,10 +3,12 @@ import {
   DELIVERY_METHODS,
   FIXED_DELIVERY_COST,
   FREE_DELIVERY_THRESHOLD,
+  isRussianPost,
   PICKUP_ADDRESS,
   PICKUP_HOURS,
 } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
+import { RussianPostCalculator } from "@/components/delivery/russian-post-calculator";
 
 export const metadata: Metadata = {
   title: "Доставка и оплата",
@@ -22,13 +24,15 @@ export default function DeliveryPage() {
       </h1>
       <p className="mt-3 text-muted">Отправляем по всей России в течение 1–3 дней после оплаты.</p>
       <p className="mt-4 text-xl font-bold text-green sm:text-2xl">
-        Доставка — {formatPrice(FIXED_DELIVERY_COST)}, от {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно.
+        СДЭК, Ozon и Яндекс — {formatPrice(FIXED_DELIVERY_COST)}, Почта России — по тарифу,
+        от {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно.
       </p>
       <p className="mt-2 text-sm text-muted">Самовывоз в Краснодаре бесплатный при любой сумме заказа.</p>
 
       <section className="mt-10 grid gap-3 sm:grid-cols-2" aria-label="Способы получения">
         {DELIVERY_METHODS.map((method) => {
           const pickup = method.provider === "pickup";
+          const post = isRussianPost(method.id);
           return (
             <div
               key={method.id}
@@ -37,16 +41,24 @@ export default function DeliveryPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="text-lg font-bold">{method.name}</div>
                 <div className="shrink-0 text-sm font-bold text-green">
-                  {pickup ? "Бесплатно" : formatPrice(method.cost)}
+                  {pickup ? "Бесплатно" : post ? "по тарифу" : formatPrice(method.cost)}
                 </div>
               </div>
               <p className="mt-1 text-sm text-muted">{method.description}</p>
               {!pickup && (
-                <p className="mt-3 text-xs text-muted">Бесплатно, если стоимость товаров в заказе от {formatPrice(FREE_DELIVERY_THRESHOLD)}.</p>
+                <p className="mt-3 text-xs text-muted">
+                  {post
+                    ? `Точный тариф — по вашему индексу при оформлении. Бесплатно от ${formatPrice(FREE_DELIVERY_THRESHOLD)}.`
+                    : `Бесплатно, если стоимость товаров в заказе от ${formatPrice(FREE_DELIVERY_THRESHOLD)}.`}
+                </p>
               )}
             </div>
           );
         })}
+      </section>
+
+      <section className="mt-10" aria-label="Калькулятор Почты России">
+        <RussianPostCalculator />
       </section>
 
       <section className="mt-12 rounded-3xl bg-card p-6 ring-1 ring-line/60 sm:p-8">
