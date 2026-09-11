@@ -14,7 +14,7 @@ export default function CheckoutPage() {
       <h1 className="heading text-5xl sm:text-6xl">
         Оформление<span className="text-green">.</span>
       </h1>
-      <p className="mt-3 text-muted">Без регистрации. Только то, что нужно для доставки.</p>
+      <p className="mt-3 text-muted">Без регистрации. Оплата только онлайн через ЮKassa.</p>
       <CheckoutForm onlinePayment={isOnlinePaymentEnabled()} />
     </div>
   );
