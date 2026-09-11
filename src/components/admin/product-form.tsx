@@ -83,6 +83,7 @@ export function ProductForm({ product, categories }: { product: Product | null; 
             <Field label="Цена, ₽"><Input name="price" type="number" min={0} step={1} required defaultValue={product?.price ?? ""} inputMode="numeric" /></Field>
             <Field label="Старая цена, ₽" hint="Для скидки. 0 — нет скидки"><Input name="oldPrice" type="number" min={0} step={1} defaultValue={product?.oldPrice ?? 0} inputMode="numeric" /></Field>
             <Field label="Количество в наличии" hint="0 — «Нет в наличии»"><Input name="stock" type="number" min={0} step={1} defaultValue={product?.stock ?? 0} inputMode="numeric" /></Field>
+            <Field label="Вес для доставки, г" hint="Вес одного изделия — для расчёта тарифа Почты России"><Input name="weightGrams" type="number" min={10} max={5000} step={1} defaultValue={product?.weightGrams ?? 150} inputMode="numeric" /></Field>
             <Field label="Порядок сортировки"><Input name="sortOrder" type="number" step={1} defaultValue={product?.sortOrder ?? 0} inputMode="numeric" /></Field>
           </div>
         </Card>

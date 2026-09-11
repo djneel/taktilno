@@ -3,8 +3,10 @@ import { orders, orderItems, products, type OrderStatus, type PaymentStatus } fr
 import { eq, inArray, sql } from "drizzle-orm";
 import { getMainImage } from "./images";
 import {
+  FREE_DELIVERY_THRESHOLD,
   getDeliveryCost,
   getDeliveryMethod,
+  isRussianPost,
   ONLINE_PAYMENT_METHOD,
   PICKUP_ADDRESS,
   PICKUP_CITY,
@@ -12,6 +14,12 @@ import {
 import { getPaymentProvider } from "./payments";
 import { notifyNewOrder } from "./notifications";
 import { normalizeInn, validateInn } from "./inn";
+import {
+  estimateParcelWeightGrams,
+  getRussianPostQuote,
+  isValidPostcode,
+  normalizePostcode,
+} from "./delivery/russian-post";
 
 export type CheckoutInput = {
   name: string;
@@ -19,6 +27,7 @@ export type CheckoutInput = {
   email: string;
   city?: string;
   deliveryMethod: string;
+  postcode?: string;
   address?: string;
   paymentMethod: string;
   comment?: string;
@@ -50,7 +59,11 @@ export async function createOrder(input: CheckoutInput) {
 
   const submittedCity = input.city?.trim() ?? "";
   const submittedAddress = input.address?.trim() ?? "";
+  const submittedPostcode = normalizePostcode(input.postcode ?? "");
   if (delivery.needsCity && !submittedCity) throw new CheckoutError("Укажите город");
+  if (delivery.needsPostcode && !isValidPostcode(submittedPostcode)) {
+    throw new CheckoutError("Укажите корректный индекс (6 цифр)");
+  }
   if (delivery.needsAddress && !submittedAddress) {
     throw new CheckoutError("Укажите адрес / пункт выдачи");
   }
@@ -115,9 +128,24 @@ export async function createOrder(input: CheckoutInput) {
   }
 
   const subtotal = lines.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
-  // Итог всегда рассчитывается на сервере: 300 ₽ для доставки ниже порога,
-  // бесплатно от 2 000 ₽, самовывоз — бесплатно при любой сумме.
-  const deliveryCost = getDeliveryCost(delivery.id, subtotal);
+  // Итог всегда рассчитывается на сервере. Почта России (гибрид): бесплатно
+  // от порога, ниже порога — живой тариф из API Почты по индексу получателя
+  // (с graceful fallback на 300 ₽, если API недоступны). Остальные службы —
+  // 300 ₽ ниже порога, бесплатно от порога; самовывоз бесплатен всегда.
+  let deliveryCost: number;
+  if (isRussianPost(delivery.id) && subtotal < FREE_DELIVERY_THRESHOLD) {
+    const weightGrams = estimateParcelWeightGrams(
+      lines.map((line) => ({ weightGrams: line.product.weightGrams ?? null, quantity: line.quantity }))
+    );
+    const quote = await getRussianPostQuote({
+      postcode: submittedPostcode,
+      weightGrams,
+      declaredValueRub: subtotal,
+    });
+    deliveryCost = getDeliveryCost(delivery.id, subtotal, { russianPostCost: quote.cost });
+  } else {
+    deliveryCost = getDeliveryCost(delivery.id, subtotal);
+  }
   const total = subtotal + deliveryCost;
 
   const created = await db.transaction(async (tx) => {
@@ -130,6 +158,7 @@ export async function createOrder(input: CheckoutInput) {
         email,
         city,
         deliveryMethod: delivery.id,
+        postcode: delivery.needsPostcode ? submittedPostcode : "",
         address,
         comment: input.comment?.trim() ?? "",
         inn,

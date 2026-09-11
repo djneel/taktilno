@@ -29,6 +29,10 @@ async function seed() {
   await db.execute(sql`ALTER TABLE "product_images" ADD COLUMN IF NOT EXISTS "color_variant" text`);
   // То же для ИНН покупателя в заказах (checkout юрлиц/ИП).
   await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "inn" text DEFAULT '' NOT NULL`);
+  // Интеграция Почты России: вес товара для тарификации, индекс и трек-номер заказа.
+  await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "weight_grams" integer DEFAULT 150 NOT NULL`);
+  await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "postcode" text DEFAULT '' NOT NULL`);
+  await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "tracking_number" text`);
 
   const [flag] = await db
     .select()
@@ -97,6 +101,7 @@ async function seed() {
         color: "Шалфей",
         features: "Подвижные сегменты, поворотная голова, печать одной деталью",
       },
+      weightGrams: 100,
       stock: 12,
       isFeatured: true,
       isNew: false,
@@ -119,6 +124,7 @@ async function seed() {
         color: "Пыльная роза",
         features: "Гибкие лапы и спина",
       },
+      weightGrams: 80,
       stock: 20,
       isFeatured: true,
       isNew: false,
@@ -141,6 +147,7 @@ async function seed() {
         color: "Мята / крем",
         features: "Гибкий хвост, двухцветная печать",
       },
+      weightGrams: 100,
       stock: 8,
       isFeatured: true,
       isNew: false,
@@ -163,6 +170,7 @@ async function seed() {
         color: "Олива / розовый",
         features: "Кликер, съёмный цветок",
       },
+      weightGrams: 60,
       stock: 30,
       isFeatured: true,
       isNew: true,
@@ -185,6 +193,7 @@ async function seed() {
         color: "Лаванда / розовый",
         features: "Гибкое тело, подарочная упаковка",
       },
+      weightGrams: 100,
       stock: 6,
       isFeatured: false,
       isNew: true,
@@ -207,6 +216,7 @@ async function seed() {
         color: "Глубокий бирюзовый",
         features: "8 подвижных щупалец",
       },
+      weightGrams: 100,
       stock: 0,
       isFeatured: false,
       isNew: true,
@@ -271,6 +281,7 @@ async function ensureSchema() {
       "specifications" jsonb DEFAULT '{}'::jsonb NOT NULL,
       "variants" jsonb DEFAULT '[]'::jsonb NOT NULL,
       "stock" integer DEFAULT 0 NOT NULL,
+      "weight_grams" integer DEFAULT 150 NOT NULL,
       "is_featured" boolean DEFAULT false NOT NULL,
       "is_new" boolean DEFAULT false NOT NULL,
       "is_available" boolean DEFAULT true NOT NULL,
@@ -323,9 +334,11 @@ async function ensureSchema() {
       "email" text NOT NULL,
       "city" text NOT NULL,
       "delivery_method" text NOT NULL,
+      "postcode" text DEFAULT '' NOT NULL,
       "address" text DEFAULT '' NOT NULL,
       "comment" text DEFAULT '' NOT NULL,
       "inn" text DEFAULT '' NOT NULL,
+      "tracking_number" text,
       "subtotal" integer NOT NULL,
       "delivery_cost" integer DEFAULT 0 NOT NULL,
       "total" integer NOT NULL,

@@ -46,7 +46,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                       <span className="font-semibold">{o.customerName}</span> · {o.phone} · {o.email}
                     </div>
                     <div className="truncate text-xs text-muted">
-                      {o.items.map((i) => `${i.name} × ${i.quantity}`).join(", ")} · {o.city} · {getDeliveryMethodName(o.deliveryMethod)}
+                      {o.items.map((i) => `${i.name} × ${i.quantity}`).join(", ")} · {o.postcode ? `${o.postcode}, ` : ""}{o.city} · {getDeliveryMethodName(o.deliveryMethod)}{o.trackingNumber ? ` · ✉ ${o.trackingNumber}` : ""}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">

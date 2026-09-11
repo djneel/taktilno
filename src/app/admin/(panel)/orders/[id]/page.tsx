@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { orders, ORDER_STATUSES, PAYMENT_STATUSES } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { updateOrderStatusAction, cancelOrderAction, deleteOrderAction } from "@/lib/admin-actions";
+import { updateOrderStatusAction, updateOrderTrackingAction, cancelOrderAction, deleteOrderAction } from "@/lib/admin-actions";
 import { Button, Card, Field, PageTitle, Select } from "@/components/admin/ui";
 import { formatDate, formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, isFreeDelivery, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getDeliveryMethodName, isFreeDelivery, isRussianPost, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/constants";
+import { getRussianPostTrackingUrl } from "@/lib/delivery/russian-post";
 
 export default async function AdminOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -68,7 +69,18 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               <Row k="Дата" v={formatDate(order.createdAt)} />
               <Row k="Город" v={order.city} />
               <Row k="Способ доставки" v={getDeliveryMethodName(order.deliveryMethod)} />
+              {isRussianPost(order.deliveryMethod) && <Row k="Индекс" v={order.postcode || "—"} />}
               <Row k="Адрес / ПВЗ" v={order.address || "—"} />
+              {order.trackingNumber && (
+                <Row
+                  k="Трек-номер"
+                  v={
+                    <a href={getRussianPostTrackingUrl(order.trackingNumber)} target="_blank" rel="noreferrer" className="text-green">
+                      {order.trackingNumber} ↗
+                    </a>
+                  }
+                />
+              )}
               <Row k="Комментарий" v={order.comment || "—"} />
               <Row k="Платёжный провайдер" v={order.paymentProvider} />
               <Row k="ID платежа" v={order.paymentId || "—"} />
@@ -77,6 +89,36 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
         </div>
 
         <div className="space-y-4">
+          {(isRussianPost(order.deliveryMethod) || order.trackingNumber) && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">Трек-номер Почты России</h2>
+              <form action={updateOrderTrackingAction} className="grid gap-3">
+                <input type="hidden" name="id" value={order.id} />
+                <Field label="Трек-номер" hint="14 цифр с чека Почты. Пусто — убрать номер.">
+                  <input
+                    name="trackingNumber"
+                    defaultValue={order.trackingNumber ?? ""}
+                    placeholder="12345678901234"
+                    maxLength={30}
+                    autoComplete="off"
+                    className="h-12 w-full rounded-xl bg-bg2 px-3.5 text-base uppercase outline-none ring-1 ring-line/60 focus:ring-green"
+                  />
+                </Field>
+                <Button type="submit" variant="green">Сохранить трек-номер</Button>
+              </form>
+              {order.trackingNumber && (
+                <a
+                  href={getRussianPostTrackingUrl(order.trackingNumber)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 block text-center text-sm text-muted hover:text-green"
+                >
+                  Открыть отслеживание ↗
+                </a>
+              )}
+            </Card>
+          )}
+
           <Card>
             <h2 className="mb-3 text-lg font-bold">Статусы</h2>
             <form action={updateOrderStatusAction} className="grid gap-3">
