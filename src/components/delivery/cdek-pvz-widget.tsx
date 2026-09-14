@@ -6,7 +6,8 @@
  * Два режима:
  *   CdekPvzPicker — чекаут: кнопка открывает карту в popup-окне, покупатель
  *   выбирает ПВЗ (onChoose), выбор летит в заказ (код — в накладную).
- *   Тяжёлый скрипт (~700 КБ) грузится лениво, только по клику.
+ *   Тяжёлые скрипты (UMD ~700 КБ + лоадер Яндекс.Карт) прогреваются заранее
+ *   через warmupCdekWidget(), как только известно, что виджет включён.
  *   Тариф виджета — ориентир; авторитетная цена — наш серверный расчёт.
  *
  *   CdekPvzMap — страница доставки: встроенная карта ПВЗ без выбора
@@ -159,6 +160,43 @@ function isCdnError(error: unknown) {
   );
 }
 
+let warmedUp = false;
+
+/**
+ * Прогрев тяжёлых скриптов карты ДО клика: UMD виджета (~700 КБ),
+ * preconnect к хостам и preload лоадера Яндекс.Карт v3.
+ *
+ * Вызывать, как только известно, что виджет включён (в чекауте — сразу при
+ * получении конфига, пока покупатель заполняет контакты). Квоту Яндекс.Карт
+ * не тратит: засчитываются только инициализации карты, а не скачивание JS.
+ * Идемпотентна: повторные вызовы — no-op.
+ */
+export function warmupCdekWidget() {
+  if (typeof window === "undefined" || warmedUp) return;
+  const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
+  if (!yandexKey) return;
+  warmedUp = true;
+  // Тот же промис, что использует open(), — к клику скрипт уже в кеше.
+  loadCdekWidget().catch(() => {
+    // Клик повторит загрузку и покажет ошибку, если CDN недоступен.
+  });
+  // DNS+TLS заранее — экономим рукопожатия в момент открытия карты.
+  for (const href of ["https://cdn.jsdelivr.net", "https://api-maps.yandex.ru", "https://geocode-maps.yandex.ru"]) {
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  // Точный URL лоадера, который запросит виджет (vue-yandex-maps внутри
+  // бандла 3.13.1: `${domain}/${version}/` + lang, apikey — в этом порядке).
+  // Классический <script> виджета подхватит предзагруженное из кеша.
+  const preload = document.createElement("link");
+  preload.rel = "preload";
+  preload.as = "script";
+  preload.href = `https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=${encodeURIComponent(yandexKey)}`;
+  document.head.appendChild(preload);
+}
+
 /* ---------------- Конфиг виджета с сервера ---------------- */
 
 export type CdekWidgetConfig = {
@@ -234,6 +272,11 @@ export function CdekPvzPicker({
     callbacksRef.current = { onChoose, onWidgetError };
     configRef.current = config;
   });
+
+  // Кнопка видна — начинаем греть скрипты, не дожидаясь клика.
+  useEffect(() => {
+    warmupCdekWidget();
+  }, []);
 
   useEffect(() => {
     const instance = instanceRef.current;
@@ -345,7 +388,7 @@ export function CdekPvzPicker({
   return (
     <div className="space-y-3">
       {/* Якорь для popup-виджета (сам виджет рисует модалку поверх страницы). */}
-      <div id={rootId} aria-hidden="true" />
+      <div id={rootId} className="cdek-pvz-popup-anchor" aria-hidden="true" />
       {selected ? (
         <div className="rounded-2xl bg-green/10 p-4 ring-1 ring-green/30">
           <div className="text-xs font-bold uppercase tracking-wider text-green">
@@ -427,6 +470,7 @@ export function CdekPvzMap({ config, defaultLocation }: { config: CdekWidgetConf
     let cancelled = false;
     const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
     if (!yandexKey) return;
+    warmupCdekWidget();
     (async () => {
       try {
         const CDEKWidget = await loadCdekWidget();

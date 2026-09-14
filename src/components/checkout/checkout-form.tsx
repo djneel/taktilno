@@ -21,6 +21,7 @@ import { CdekQuoteInfo, useCdekQuote } from "./cdek-fields";
 import {
   CdekPvzPicker,
   fetchCdekWidgetConfig,
+  warmupCdekWidget,
   type CdekPvzChoice,
   type CdekWidgetConfig,
   type CdekWidgetFailReason,
@@ -99,6 +100,12 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   // Сервер разрешил карту, а в сборке ключа нет — классический «забыли редеплой».
   const widgetNeedsRedeploy =
     cdek && Boolean(widgetConfig?.enabled) && !widgetFailed && !buildHasYandexKey;
+
+  // Виджет включён — греем тяжёлые скрипты сразу, пока покупатель заполняет
+  // контакты: к клику «Выбрать пункт» UMD и лоадер Яндекс.Карт уже в кеше.
+  useEffect(() => {
+    if (widgetConfig?.enabled && buildHasYandexKey) warmupCdekWidget();
+  }, [widgetConfig, buildHasYandexKey]);
 
   const handlePvzChoose = (choice: CdekPvzChoice) => {
     setPvz(choice);
