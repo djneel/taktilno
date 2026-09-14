@@ -17,6 +17,7 @@ type OfficesResponse = {
   ok?: boolean;
   offices?: CdekOffice[];
   reason?: string;
+  detail?: string;
 };
 
 /** Список офисов СДЭК по городу: дебаунс, отмена устаревших запросов, ретрай. */
@@ -47,6 +48,7 @@ export function useCdekOffices(city: string, enabled: boolean) {
         const list = data?.ok && Array.isArray(data.offices) ? data.offices : [];
         setOffices(list);
         if (!data?.ok) {
+          console.error("[cdek-offices] список недоступен:", data?.reason, data?.detail ?? "");
           // Город не найден — просим проверить название, остальное
           // (договор, сеть) — временная недоступность списка.
           setError(data?.reason === "api-error" || data?.reason === "not-configured" ? "unavailable" : "empty");
