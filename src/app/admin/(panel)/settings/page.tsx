@@ -8,6 +8,7 @@ import { Button, Card, Field, Input, PageTitle, Select } from "@/components/admi
 import { ImageUrlField } from "@/components/admin/image-url-field";
 import { PochtaTestButton } from "@/components/admin/pochta-test-button";
 import { CdekTestButton } from "@/components/admin/cdek-test-button";
+import { CdekDiagnosticsButton } from "@/components/admin/cdek-diagnostics-button";
 import { getRussianPostConfig, isOtpravkaConfigured } from "@/lib/delivery/russian-post";
 import { getCdekConfig, isCdekConfigured, isCdekTestMode } from "@/lib/delivery/cdek";
 
@@ -80,8 +81,9 @@ export default async function AdminSettingsPage() {
             Настройки — через переменные окружения на хостинге (см. DEPLOY.md).
           </p>
           <CdekStatus />
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
             <CdekTestButton />
+            <CdekDiagnosticsButton />
           </div>
         </Card>
 
