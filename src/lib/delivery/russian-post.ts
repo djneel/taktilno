@@ -620,7 +620,9 @@ function formatOfficeHours(data: Record<string, unknown>): string | null {
   const days = WEEK_DAYS.map(([key, label], index) => ({ index, label, hours: formatDayHours(data[key]) }));
   const open = days.filter((day): day is { index: number; label: string; hours: string } => day.hours !== null);
   if (open.length === 0) return null;
-  if (open.length === 7 && open.every((day) => day.hours === open[0].hours)) return `Ежедневно ${open[0].hours}`;
+  if (open.length === 7 && open.every((day) => day.hours === open[0].hours)) {
+    return open[0].hours === "круглосуточно" ? "Круглосуточно" : `Ежедневно ${open[0].hours}`;
+  }
   // Склеиваем подряд идущие дни с одинаковыми часами в диапазоны.
   const parts: string[] = [];
   let start = open[0];
@@ -651,6 +653,10 @@ function formatDayHours(value: unknown): string | null {
     const slot = value as Record<string, unknown>;
     const opens = String(slot.opens ?? slot.open ?? "").trim();
     const closes = String(slot.closes ?? slot.close ?? "").trim();
+    // 00:00–00:00 (варианты 24:00/23:59) — круглосуточное отделение.
+    if (opens === "00:00" && (closes === "00:00" || closes === "24:00" || closes === "23:59")) {
+      return "круглосуточно";
+    }
     if (opens && closes) return `${opens}–${closes}`;
   }
   return null;

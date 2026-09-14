@@ -67,10 +67,7 @@ export function RussianPostOfficeInfo({ postcode }: { postcode: string }) {
     <div className="rounded-2xl bg-green/10 p-4 ring-1 ring-green/30" role="note">
       <div className="text-xs font-bold uppercase tracking-wider text-green">Ваше отделение Почты России</div>
       <div className="mt-1 font-bold">{office.address}</div>
-      <div className="mt-1 text-xs text-muted">
-        Индекс {office.postcode}
-        {office.workTime ? ` · ${office.workTime}` : ""}
-      </div>
+      {office.workTime && <div className="mt-1 text-xs text-muted">{office.workTime}</div>}
       {office.isClosed && (
         <div className="mt-1 text-xs font-bold text-pink">
           Отделение временно закрыто — уточните выдачу на сайте Почты России.
