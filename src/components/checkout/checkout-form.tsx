@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useCart } from "@/components/cart/cart-context";
 import {
   DELIVERY_METHODS,
@@ -18,6 +18,12 @@ import {
 import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
 import { CdekQuoteInfo, useCdekQuote } from "./cdek-fields";
+import {
+  CdekPvzPicker,
+  fetchCdekWidgetConfig,
+  type CdekPvzChoice,
+  type CdekWidgetConfig,
+} from "@/components/delivery/cdek-pvz-widget";
 import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
@@ -35,6 +41,11 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Виджет ПВЗ СДЭК: undefined — конфиг грузится, null — не загрузился (ручной ввод).
+  const [widgetConfig, setWidgetConfig] = useState<CdekWidgetConfig | null | undefined>(undefined);
+  const [widgetFailed, setWidgetFailed] = useState(false);
+  const [widgetAttempt, setWidgetAttempt] = useState(0);
+  const [pvz, setPvz] = useState<CdekPvzChoice | null>(null);
 
   const delivery = DELIVERY_METHODS.find((method) => method.id === form.deliveryMethod) ?? DELIVERY_METHODS[0];
   const russianPost = isRussianPost(delivery.id);
@@ -51,6 +62,8 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
     city: form.city,
     items: cartItems,
     subtotal,
+    cityCode: pvz?.office.cityCode ?? null,
+    postcode: pvz?.office.postalCode ?? null,
   });
   // Почта России и СДЭК: живой тариф из API (сервер пересчитает авторитетно при оформлении).
   const liveCosts = {
@@ -60,6 +73,38 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const deliveryCost = getDeliveryCost(delivery.id, subtotal, liveCosts);
   const deliveryIsFree = deliveryCost === 0;
   const total = subtotal + deliveryCost;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCdekWidgetConfig().then(
+      (cfg) => {
+        if (!cancelled) setWidgetConfig(cfg);
+      },
+      () => {
+        if (!cancelled) setWidgetConfig(null);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Карта активна: СДЭК + договор + ключ Яндекс.Карт + скрипт завёлся.
+  const widgetActive = cdek && Boolean(widgetConfig?.enabled) && !widgetFailed;
+
+  const handlePvzChoose = (choice: CdekPvzChoice) => {
+    setPvz(choice);
+    // Город из виджета точнее ручного — подставляем для котировки.
+    if (choice.office.city) {
+      setForm((current) => ({ ...current, city: choice.office.city }));
+    }
+  };
+
+  // Ручная правка города после выбора ПВЗ — выбор сбрасываем (город уже другой).
+  const handleCityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setPvz(null);
+    setForm((current) => ({ ...current, city: event.target.value }));
+  };
 
   const set = (key: keyof typeof form) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -85,6 +130,11 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
       return;
     }
 
+    if (cdek && widgetActive && !pvz) {
+      setError("Выберите пункт выдачи СДЭК на карте — код пункта нужен для накладной");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/orders", {
@@ -94,7 +144,26 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
           ...form,
           city: delivery.needsCity ? form.city : undefined,
           postcode: delivery.needsPostcode ? form.postcode.replace(/\D/g, "") : undefined,
-          address: delivery.needsAddress ? form.address : undefined,
+          address:
+            cdek && pvz
+              ? `${pvz.office.name ? `${pvz.office.name}, ` : ""}${pvz.office.address}`
+              : delivery.needsAddress
+                ? form.address
+                : undefined,
+          ...(cdek && pvz
+            ? {
+                cdekPvz: {
+                  code: pvz.office.code,
+                  name: pvz.office.name,
+                  address: pvz.office.address,
+                  city: pvz.office.city,
+                  cityCode: pvz.office.cityCode,
+                  postalCode: pvz.office.postalCode,
+                  workTime: pvz.office.workTime,
+                  type: pvz.office.type,
+                },
+              }
+            : {}),
           paymentMethod: ONLINE_PAYMENT_METHOD,
           inn: normalizeInn(form.inn),
           items: items.map((item) => ({
@@ -232,7 +301,24 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   />
                 </>
               )}
-              <Input label="Город" required value={form.city} onChange={set("city")} autoComplete="address-level2" />
+              <Input
+                label="Город"
+                required
+                value={form.city}
+                onChange={cdek ? handleCityChange : set("city")}
+                autoComplete="address-level2"
+              />
+              {cdek && widgetActive && (
+                <CdekPvzPicker
+                  key={widgetAttempt}
+                  config={widgetConfig as CdekWidgetConfig}
+                  city={form.city}
+                  weightGrams={cdekQuote?.weightGrams ?? 500}
+                  selected={pvz}
+                  onChoose={handlePvzChoose}
+                  onWidgetError={() => setWidgetFailed(true)}
+                />
+              )}
               {cdek && (
                 <CdekQuoteInfo
                   quote={cdekQuote}
@@ -242,13 +328,32 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   city={form.city}
                 />
               )}
-              <Input
-                label={delivery.addressLabel}
-                required
-                value={form.address}
-                onChange={set("address")}
-                autoComplete="street-address"
-              />
+              {cdek && widgetConfig === undefined ? (
+                <div className="h-14 animate-pulse rounded-2xl bg-bg2/60 ring-1 ring-line/60" aria-hidden="true" />
+              ) : cdek && widgetActive ? null : (
+                <Input
+                  label={delivery.addressLabel}
+                  required
+                  value={form.address}
+                  onChange={set("address")}
+                  autoComplete="street-address"
+                />
+              )}
+              {cdek && widgetFailed && widgetConfig?.enabled && (
+                <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
+                  Карта пунктов выдачи недоступна — введите адрес ПВЗ вручную.{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWidgetFailed(false);
+                      setWidgetAttempt((attempt) => attempt + 1);
+                    }}
+                    className="font-bold text-green underline underline-offset-2"
+                  >
+                    Попробовать карту снова
+                  </button>
+                </div>
+              )}
             </>
           )}
 

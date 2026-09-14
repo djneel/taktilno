@@ -33,6 +33,8 @@ async function seed() {
   await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "weight_grams" integer DEFAULT 150 NOT NULL`);
   await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "postcode" text DEFAULT '' NOT NULL`);
   await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "tracking_number" text`);
+  // Виджет ПВЗ СДЭК: код выбранного покупателем пункта выдачи.
+  await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "cdek_pvz_code" text`);
 
   const [flag] = await db
     .select()
@@ -339,6 +341,7 @@ async function ensureSchema() {
       "comment" text DEFAULT '' NOT NULL,
       "inn" text DEFAULT '' NOT NULL,
       "tracking_number" text,
+      "cdek_pvz_code" text,
       "subtotal" integer NOT NULL,
       "delivery_cost" integer DEFAULT 0 NOT NULL,
       "total" integer NOT NULL,

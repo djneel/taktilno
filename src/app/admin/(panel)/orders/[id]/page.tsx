@@ -80,6 +80,9 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               <Row k="Способ доставки" v={getDeliveryMethodName(order.deliveryMethod)} />
               {isRussianPost(order.deliveryMethod) && <Row k="Индекс" v={order.postcode || "—"} />}
               <Row k="Адрес / ПВЗ" v={order.address || "—"} />
+              {isCdek(order.deliveryMethod) && order.cdekPvzCode && (
+                <Row k="Код ПВЗ СДЭК" v={order.cdekPvzCode} />
+              )}
               {order.trackingNumber && (
                 <Row
                   k="Трек-номер"

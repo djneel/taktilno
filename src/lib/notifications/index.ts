@@ -64,6 +64,7 @@ export function formatOrderMessage(order: Order & { items: OrderItem[] }) {
     order.inn ? `ИНН: ${order.inn}` : "",
     `${order.postcode ? `${order.postcode}, ` : ""}${order.city} — ${delivery}`,
     order.address ? order.address : "",
+    order.cdekPvzCode ? `ПВЗ СДЭК: ${order.cdekPvzCode}` : "",
     order.comment ? `Комментарий: ${order.comment}` : "",
   ];
   return lines.filter((l) => l !== undefined).join("\n");

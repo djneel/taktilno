@@ -71,7 +71,7 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     id: CDEK_METHOD_ID,
     provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "Доставка в выбранный пункт СДЭК, тариф СДЭК по вашему городу",
+    description: "Выбор пункта на карте, тариф СДЭК по вашему городу",
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,

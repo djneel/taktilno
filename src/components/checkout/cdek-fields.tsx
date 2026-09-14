@@ -51,8 +51,11 @@ export function useCdekQuote(opts: {
   city: string;
   items: QuoteItem[];
   subtotal: number;
+  /** Код города и индекс из виджета ПВЗ — тариф точнее, чем по названию. */
+  cityCode?: number | null;
+  postcode?: string | null;
 }) {
-  const { enabled, city, items, subtotal } = opts;
+  const { enabled, city, items, subtotal, cityCode, postcode } = opts;
   const [data, setData] = useState<{ key: string | null; quote: CdekQuoteDto | null; error: string | null }>({
     key: null,
     quote: null,
@@ -84,7 +87,9 @@ export function useCdekQuote(opts: {
 
   // Ключ активного запроса; null — считать нечего (способ не СДЭК, город не введён, корзина пуста).
   const requestKey =
-    enabled && cityValid && items.length > 0 ? `${cityValue}|${itemsKey}|${subtotal}` : null;
+    enabled && cityValid && items.length > 0
+      ? `${cityValue}|${itemsKey}|${subtotal}|${cityCode ?? ""}|${postcode ?? ""}`
+      : null;
 
   // Сброс результата при смене запроса — adjustment во время рендера (без setState в эффекте).
   if (data.key !== requestKey) {
@@ -99,7 +104,12 @@ export function useCdekQuote(opts: {
         const response = await fetch("/api/delivery/cdek/calculate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ city: cityValue, items: snapshot }),
+          body: JSON.stringify({
+            city: cityValue,
+            items: snapshot,
+            ...(cityCode ? { cityCode } : {}),
+            ...(postcode ? { postcode } : {}),
+          }),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) {
@@ -120,7 +130,7 @@ export function useCdekQuote(opts: {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestKey, cityValue, snapshot]);
+  }, [requestKey, cityValue, snapshot, cityCode, postcode]);
 
   const loading = requestKey !== null && data.key === requestKey && !data.quote && !data.error;
   return { quote: data.key === requestKey ? data.quote : null, loading, error: data.error, cityValid };

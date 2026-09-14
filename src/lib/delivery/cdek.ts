@@ -251,6 +251,8 @@ export async function getCdekQuote(opts: {
   address?: string;
   /** Индекс получателя, если известен. */
   postcode?: string;
+  /** Код города в реестре СДЭК — приходит из виджета ПВЗ, точнее названия. */
+  cityCode?: number;
   weightGrams: number;
   /** Объявленная ценность в рублях (для справки и услуг страхования). */
   declaredValueRub?: number;
@@ -278,7 +280,10 @@ export async function getCdekQuote(opts: {
   }
 
   try {
-    const location = await resolveDestination({ city, address: opts.address, postcode }, config);
+    const location = await resolveDestination(
+      { city, address: opts.address, postcode, cityCode: opts.cityCode },
+      config
+    );
     const quote = await quoteViaTariff(location, weightGrams, config);
     putCache(quoteCache, cacheKey, quote, false);
     return quote;
@@ -294,10 +299,15 @@ export async function getCdekQuote(opts: {
 type CdekLocation = { code?: number; city: string; address?: string; postal_code?: string; country_code?: string };
 
 async function resolveDestination(
-  opts: { city: string; address?: string; postcode?: string },
+  opts: { city: string; address?: string; postcode?: string; cityCode?: number },
   config: CdekConfig
 ): Promise<CdekLocation> {
   const address = (opts.address ?? "").trim().slice(0, 255);
+  // Код из виджета ПВЗ — самый точный способ: город уже найден в реестре СДЭК.
+  const directCode = Number(opts.cityCode);
+  if (Number.isFinite(directCode) && directCode > 0) {
+    return { code: Math.round(directCode), city: cityQuery(opts.city) };
+  }
   // Индекс — самый точный способ без справочника городов.
   if (opts.postcode && /^\d{6}$/.test(opts.postcode)) {
     return {

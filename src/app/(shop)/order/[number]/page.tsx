@@ -83,6 +83,15 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
               </div>
             )
           )}
+          {isCdek(order.deliveryMethod) && order.cdekPvzCode && (
+            <div className="mt-5 rounded-2xl bg-bg2/60 p-4 text-left ring-1 ring-line/60">
+              <span className="block text-xs font-bold uppercase tracking-wider text-green">Пункт выдачи СДЭК</span>
+              <span className="mt-1 block text-sm font-bold">{order.address}</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                {order.city} · код {order.cdekPvzCode}
+              </span>
+            </div>
+          )}
           {(isRussianPost(order.deliveryMethod) || isCdek(order.deliveryMethod)) && !order.trackingNumber && (
             <p className="mt-5 rounded-2xl bg-bg2/60 p-3 text-xs leading-relaxed text-muted ring-1 ring-line/60">
               {isCdek(order.deliveryMethod)

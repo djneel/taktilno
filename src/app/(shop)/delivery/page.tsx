@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 import { CdekCalculator } from "@/components/delivery/cdek-calculator";
+import { CdekPvzMapSection } from "@/components/delivery/cdek-pvz-widget";
 import { RussianPostCalculator } from "@/components/delivery/russian-post-calculator";
 
 export const metadata: Metadata = {
@@ -67,6 +68,8 @@ export default function DeliveryPage() {
         <RussianPostCalculator />
         <CdekCalculator />
       </section>
+
+      <CdekPvzMapSection />
 
       <section className="mt-12 rounded-3xl bg-card p-6 ring-1 ring-line/60 sm:p-8">
         <div className="text-xs font-bold uppercase tracking-[0.16em] text-green">Бесплатный самовывоз</div>
