@@ -393,7 +393,7 @@ export async function testRussianPostAction(postcode: string): Promise<{ ok: boo
 
 export async function testCdekAction(city: string): Promise<{ ok: boolean; message: string }> {
   await requireAdmin();
-  const { getCdekConfig, getCdekQuote, isCdekConfigured, isCdekTestMode, resolveCityCode } = await import(
+  const { getCdekConfig, getCdekQuote, isCdekConfigured, cdekContourLabel, resolveCityCode } = await import(
     "./delivery/cdek"
   );
   const { formatPrice } = await import("./utils");
@@ -415,18 +415,20 @@ export async function testCdekAction(city: string): Promise<{ ok: boolean; messa
     const quote = await getCdekQuote({ city: target, weightGrams: 500, declaredValueRub: 1000 });
     const days =
       quote.minDays !== undefined || quote.maxDays !== undefined
-        ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} раб. дн.`
+        ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} раб. дн`
         : "";
     const source = quote.fallback
       ? `стандартный тариф (${quote.reason === "weight-limit" ? "превышен предел веса" : quote.reason === "not-configured" ? "нет договора" : "API недоступно"})`
       : `API СДЭК v2, тариф ${quote.tariffCode}`;
+    const detail =
+      quote.fallback && quote.reason === "api-error" && quote.reasonDetail
+        ? ` Причина: ${quote.reasonDetail} Подробности — в «Диагностике СДЭК» ниже.`
+        : "";
     return {
       ok: !quote.fallback,
       message:
         `${config.fromCity} → ${target}${cityCode ? ` (код города ${cityCode})` : " (код города не найден)"}, 500 г: ` +
-        `${formatPrice(quote.cost)}${days}. Источник: ${source}. Контур: ${
-          isCdekTestMode() ? "тестовый (CDEK_API_URL)" : "боевой api.cdek.ru"
-        }.`,
+        `${formatPrice(quote.cost)}${days}. Источник: ${source}. Контур: ${cdekContourLabel(config)}.${detail}`,
     };
   } catch (e) {
     return { ok: false, message: `Ошибка расчёта: ${e instanceof Error ? e.message : String(e)}` };

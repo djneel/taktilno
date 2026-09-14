@@ -16,6 +16,9 @@ export const dynamic = "force-dynamic";
  *   { city, items: [{ productId, quantity }] } — чекаут (вес и сумма из БД)
  *   { city, weightGrams, subtotal? }           — виджет на странице доставки
  *
+ * Опционально (после выбора ПВЗ на карте): cityCode и postcode из виджета —
+ * тариф считается точнее, чем по одному названию города.
+ *
  * Ответ: { ok: true, city, cityCode?, cost, carrierCost, free, minDays?,
  *          maxDays?, source, fallback, reason?, weightGrams, configured }
  * cost — итог с учётом бесплатного порога, carrierCost — сырой тариф СДЭК.
@@ -37,6 +40,8 @@ export async function POST(req: Request) {
       items?: unknown;
       weightGrams?: unknown;
       subtotal?: unknown;
+      cityCode?: unknown;
+      postcode?: unknown;
     };
 
     const city = String(body.city ?? "").trim().slice(0, 120);
@@ -84,7 +89,15 @@ export async function POST(req: Request) {
       subtotal = Number.isFinite(rawSubtotal) && rawSubtotal > 0 ? rawSubtotal : 0;
     }
 
-    const quote = await getCdekQuote({ city, weightGrams, declaredValueRub: subtotal });
+    const cityCode = Math.round(Number(body.cityCode));
+    const postcode = String(body.postcode ?? "").replace(/\D/g, "").slice(0, 6);
+    const quote = await getCdekQuote({
+      city,
+      ...(Number.isFinite(cityCode) && cityCode > 0 ? { cityCode } : {}),
+      ...(postcode.length === 6 ? { postcode } : {}),
+      weightGrams,
+      declaredValueRub: subtotal,
+    });
     const free = subtotal >= FREE_DELIVERY_THRESHOLD;
 
     return NextResponse.json({

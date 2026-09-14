@@ -23,12 +23,28 @@ import {
 } from "./delivery/russian-post";
 import { getCdekQuote } from "./delivery/cdek";
 
+/**
+ * Пункт выдачи СДЭК, выбранный покупателем в виджете на карте.
+ * Код едет в накладную, остальное — для точного тарифа и отображения.
+ */
+export type CdekPvzSelection = {
+  code: string;
+  name?: string;
+  address?: string;
+  city?: string;
+  cityCode?: number;
+  postalCode?: string;
+  workTime?: string;
+  type?: string;
+};
+
 export type CheckoutInput = {
   name: string;
   phone: string;
   email: string;
   city?: string;
   deliveryMethod: string;
+  cdekPvz?: CdekPvzSelection;
   postcode?: string;
   address?: string;
   paymentMethod: string;
@@ -42,6 +58,29 @@ export class CheckoutError extends Error {
     super(message);
     this.name = "CheckoutError";
   }
+}
+
+/** Чистит выбор ПВЗ из виджета: код обязателен, остальное опционально. */
+function sanitizePvzSelection(input: CheckoutInput["cdekPvz"]): CdekPvzSelection | null {
+  if (!input || typeof input !== "object") return null;
+  const code = String(input.code ?? "").trim().slice(0, 30);
+  if (!code) return null;
+  const cityCode = Math.round(Number(input.cityCode));
+  const postalCode = String(input.postalCode ?? "").replace(/\D/g, "").slice(0, 6);
+  return {
+    code,
+    ...(typeof input.name === "string" && input.name.trim() ? { name: input.name.trim().slice(0, 160) } : {}),
+    ...(typeof input.address === "string" && input.address.trim()
+      ? { address: input.address.trim().slice(0, 255) }
+      : {}),
+    ...(typeof input.city === "string" && input.city.trim() ? { city: input.city.trim().slice(0, 120) } : {}),
+    ...(Number.isFinite(cityCode) && cityCode > 0 ? { cityCode } : {}),
+    ...(postalCode.length === 6 ? { postalCode } : {}),
+    ...(typeof input.workTime === "string" && input.workTime.trim()
+      ? { workTime: input.workTime.trim().slice(0, 255) }
+      : {}),
+    ...(typeof input.type === "string" && input.type.trim() ? { type: input.type.trim().slice(0, 20) } : {}),
+  };
 }
 
 function makeOrderNumber(id: number) {
@@ -69,6 +108,9 @@ export async function createOrder(input: CheckoutInput) {
   if (delivery.needsAddress && !submittedAddress) {
     throw new CheckoutError("Укажите адрес / пункт выдачи");
   }
+
+  // ПВЗ из виджета: чистим всё, что прислал клиент (доверяем как обычному вводу формы).
+  const pvz = sanitizePvzSelection(isCdek(delivery.id) ? input.cdekPvz : undefined);
 
   // Для самовывоза не доверяем скрытым полям формы: сохраняем единые адрес и город точки выдачи.
   const city = delivery.needsCity ? submittedCity : PICKUP_CITY;
@@ -151,6 +193,9 @@ export async function createOrder(input: CheckoutInput) {
       const quote = await getCdekQuote({
         city: submittedCity,
         address: submittedAddress,
+        // Код города и индекс из виджета точнее названия — тариф считается по ним.
+        ...(pvz?.cityCode ? { cityCode: pvz.cityCode } : {}),
+        ...(pvz?.postalCode ? { postcode: pvz.postalCode } : {}),
         weightGrams,
         declaredValueRub: subtotal,
       });
@@ -173,6 +218,7 @@ export async function createOrder(input: CheckoutInput) {
         deliveryMethod: delivery.id,
         postcode: delivery.needsPostcode ? submittedPostcode : "",
         address,
+        cdekPvzCode: pvz?.code ?? null,
         comment: input.comment?.trim() ?? "",
         inn,
         subtotal,

@@ -8,31 +8,40 @@
  *
  *   1. config   — переменные окружения (CDEK_ACCOUNT/CDEK_SECRET и настройки),
  *                 контур (боевой/тестовый), маскированные креды;
- *   2. auth     — получение OAuth-токена у api.cdek.ru (всегда начисто, кэш сбрасывается);
- *   3. location — поиск города получателя в реестре СДЭК (/location/cities);
- *   4. tariff   — расчёт тарифа калькулятором (/calculator/tariff), 500 г.
+ *   2. network  — сеть до хоста API: DNS → TCP → TLS-рукопожатие (с таймингами);
+ *   3. auth     — получение OAuth-токена (всегда начисто, кэш сбрасывается);
+ *   4. location — поиск города получателя в реестре СДЭК (/location/cities);
+ *   5. tariff   — расчёт тарифа калькулятором (/calculator/tariff), 500 г.
  *
  * Каждый шаг возвращает статус ok/warn/error/skipped, длительность и
  * подсказку, что чинить. Диагностика ничего не меняет в работе магазина:
  * заказы в любом случае оформляются по стандартному тарифу (см. cdek.ts).
  *
  * Используется серверным экшеном runCdekDiagnosticsAction (admin-actions.ts).
+ * Модуль серверный (использует node:dns/net/tls) — на клиенте только типы.
  */
 
+import { lookup } from "node:dns/promises";
+import { connect as tcpConnect } from "node:net";
+import { connect as tlsConnect } from "node:tls";
+
 import {
+  CdekNetworkError,
+  cdekContourLabel,
   clearCdekCaches,
+  formatCdekError,
   getCdekConfig,
   getCdekQuote,
   getAccessToken,
   isCdekConfigured,
-  isCdekTestMode,
+  parseCdekBaseUrl,
   resolveCityCode,
   type CdekConfig,
 } from "./cdek";
 
 export type CdekDiagnosticStatus = "ok" | "warn" | "error" | "skipped";
 
-export type CdekDiagnosticStepId = "config" | "auth" | "location" | "tariff";
+export type CdekDiagnosticStepId = "config" | "network" | "auth" | "location" | "tariff";
 
 export type CdekDiagnosticStep = {
   id: CdekDiagnosticStepId;
@@ -79,19 +88,30 @@ export async function runCdekDiagnostics(city?: string): Promise<CdekDiagnostics
   // 1. Конфигурация — без неё дальше идти бессмысленно.
   const configStep = checkConfig(config);
   steps.push(configStep);
+  const baseUrl = parseCdekBaseUrl(config.baseUrl);
 
   let authStep: CdekDiagnosticStep | null = null;
   let locationStep: CdekDiagnosticStep | null = null;
   let tariffStep: CdekDiagnosticStep | null = null;
 
-  if (!isCdekConfigured()) {
+  if (!baseUrl.ok) {
+    // Непонятно, куда стучаться, — проверяем только конфиг.
+    const reason = "Пропущено: адрес API некорректен (см. шаг «Конфигурация»).";
+    steps.push(skipStep("network", "Сеть (DNS → TCP → TLS)", reason));
+    steps.push(skipStep("auth", "Авторизация (OAuth)", reason));
+    steps.push(skipStep("location", "Справочник городов", reason));
+    steps.push(skipStep("tariff", "Расчёт тарифа", reason));
+  } else if (!isCdekConfigured()) {
     // Штатный режим без договора: магазин работает на стандартном тарифе.
+    steps.push(skipStep("network", "Сеть (DNS → TCP → TLS)", "Пропущено: креды СДЭК не заданы."));
     steps.push(skipStep("auth", "Авторизация (OAuth)", "Пропущено: креды СДЭК не заданы."));
     steps.push(skipStep("location", "Справочник городов", "Пропущено: нет авторизации."));
     steps.push(skipStep("tariff", "Расчёт тарифа", "Пропущено: нет авторизации."));
   } else {
     // Чистая проверка: сбрасываем кэши, чтобы запросы точно ушли в живое API.
     clearCdekCaches();
+
+    steps.push(await checkNetwork(baseUrl));
 
     authStep = await checkAuth(config);
     steps.push(authStep);
@@ -130,10 +150,13 @@ export async function runCdekDiagnostics(city?: string): Promise<CdekDiagnostics
 
 function checkConfig(config: CdekConfig): CdekDiagnosticStep {
   const configured = Boolean(config.account && config.secret);
+  const base = parseCdekBaseUrl(config.baseUrl);
   const details: [string, string][] = [
     ["CDEK_ACCOUNT", maskSecret(config.account)],
     ["CDEK_SECRET", config.secret ? `задан (${config.secret.length} симв.)` : "не задан"],
-    ["CDEK_API_URL", isCdekTestMode() ? `${config.baseUrl} (тестовый контур)` : `${config.baseUrl} (боевой)`],
+    ["CDEK_API_URL", config.baseUrl || "не задан"],
+    ["Контур", base.ok ? cdekContourLabel(config) : "адрес некорректен"],
+    ["Хост API", base.ok ? `${base.host}:${base.port}` : "—"],
     ["Город отправления", config.fromCityCode ? `${config.fromCity} (код ${config.fromCityCode})` : config.fromCity],
     ["Код тарифа", `${config.tariffCode} (запасные: 136, 234, 368)`],
     ["Вес изделия / упаковки", `${config.defaultItemWeightG} г / ${config.packagingWeightG} г`],
@@ -144,6 +167,17 @@ function checkConfig(config: CdekConfig): CdekDiagnosticStep {
     ["Предел веса онлайн-расчёта", `${config.maxWeightG} г`],
   ];
 
+  if (!base.ok) {
+    return {
+      id: "config",
+      title: "Конфигурация",
+      status: "error",
+      message: `Адрес API некорректен: ${base.problem}`,
+      hint: "Исправьте CDEK_API_URL в переменных окружения хостинга и сделайте редеплой. Боевой контур: https://api.cdek.ru/v2, тестовый: https://api.edu.cdek.ru/v2.",
+      durationMs: 0,
+      details,
+    };
+  }
   if (!configured) {
     return {
       id: "config",
@@ -160,14 +194,155 @@ function checkConfig(config: CdekConfig): CdekDiagnosticStep {
     id: "config",
     title: "Конфигурация",
     status: "ok",
-    message: `Креды заданы, контур: ${isCdekTestMode() ? "тестовый" : "боевой"} api.cdek.ru.`,
+    message: `Креды заданы, контур: ${cdekContourLabel(config)}.`,
     durationMs: 0,
     details,
   };
 }
 
+/**
+ * Шаг «Сеть»: проверяет путь до хоста API по этапам — DNS, TCP, TLS.
+ * Отвечает на вопрос «где именно рвётся», который fetch прячет за «fetch failed».
+ */
+async function checkNetwork(target: { host: string; port: number }): Promise<CdekDiagnosticStep> {
+  const t0 = Date.now();
+  const { host, port } = target;
+  const details: [string, string][] = [];
+  const elapsed = () => Date.now() - t0;
+
+  // 1. DNS — резолвим хост в IP.
+  let ip: string;
+  try {
+    const t = Date.now();
+    ip = (await lookup(host)).address;
+    details.push(["DNS", `${host} → ${ip} · ${Date.now() - t} мс`]);
+  } catch (error) {
+    return {
+      id: "network",
+      title: "Сеть (DNS → TCP → TLS)",
+      status: "error",
+      message: `DNS не резолвит ${host}: ${formatCdekError(error)}.`,
+      hint: "Проверьте CDEK_API_URL на опечатки и DNS на сервере хостинга.",
+      durationMs: elapsed(),
+      details,
+    };
+  }
+
+  // 2. TCP — открывается ли порт.
+  try {
+    const t = Date.now();
+    await tcpProbe(ip, port, 5_000);
+    details.push(["TCP", `${ip}:${port} · соединение OK · ${Date.now() - t} мс`]);
+  } catch (error) {
+    return {
+      id: "network",
+      title: "Сеть (DNS → TCP → TLS)",
+      status: "error",
+      message: `TCP-подключение к ${ip}:${port} не удалось: ${formatCdekError(error)}.`,
+      hint: `Хостинг режет исходящие соединения либо неверны адрес/порт. Проверьте с сервера: curl -v https://${host}/v2/oauth/token`,
+      durationMs: elapsed(),
+      details,
+    };
+  }
+
+  // 3. TLS — проходит ли рукопожатие и валиден ли сертификат.
+  try {
+    const t = Date.now();
+    const tls = await tlsProbe(host, ip, port, 7_000);
+    details.push([
+      "TLS",
+      `${ip}:${port} · ${tls.protocol}, ${tls.cipher} · ${Date.now() - t} мс · сертификат ${tls.authorized ? "OK" : "НЕ ПРОШЁЛ ПРОВЕРКУ"}`,
+    ]);
+    if (!tls.authorized) {
+      return {
+        id: "network",
+        title: "Сеть (DNS → TCP → TLS)",
+        status: "error",
+        message: `TLS до ${host} установился, но сертификат не прошёл проверку: ${tls.authError ?? "неизвестная причина"}.`,
+        hint: "Между сервером и СДЭК, похоже, MITM-прокси, либо сбиты дата/время на сервере. Проверьте curl -v и часы сервера.",
+        durationMs: elapsed(),
+        details,
+      };
+    }
+    return {
+      id: "network",
+      title: "Сеть (DNS → TCP → TLS)",
+      status: "ok",
+      message: `DNS, TCP и TLS до ${host} в порядке (${tls.protocol}, ${tls.cipher}).`,
+      durationMs: elapsed(),
+      details,
+    };
+  } catch (error) {
+    return {
+      id: "network",
+      title: "Сеть (DNS → TCP → TLS)",
+      status: "error",
+      message: `TLS-рукопожатие с ${host} не удалось: ${formatCdekError(error)}.`,
+      hint: "Сервер СДЭК (или фильтр на пути) рвёт соединение до ответа — anti-DDoS-защита часто режет IP хостингов. Проверьте с сервера curl -v, узнайте исходящий IP (curl ifconfig.me) и напишите в поддержку СДЭК (интеграция API) и хостеру. Магазин при этом работает на стандартном тарифе 300 ₽.",
+      durationMs: elapsed(),
+      details,
+    };
+  }
+}
+
+/** TCP-подключение с таймаутом. */
+function tcpProbe(ip: string, port: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = tcpConnect({ host: ip, port, timeout: timeoutMs });
+    const done = (fn: () => void) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      fn();
+    };
+    socket.once("connect", () => done(resolve));
+    socket.once("timeout", () => done(() => reject(new Error("таймаут TCP-подключения"))));
+    socket.once("error", (err) => done(() => reject(err)));
+  });
+}
+
+/**
+ * TLS-рукопожатие с хостом (SNI — имя хоста, коннект — к резолвнутому IP).
+ * Сертификат не отбраковываем сразу, а возвращаем verdict — чтобы различить
+ * «рукопожатие рвут» и «рукопожатие прошло, но сертификат чужой».
+ */
+function tlsProbe(
+  host: string,
+  ip: string,
+  port: number,
+  timeoutMs: number
+): Promise<{ protocol: string; cipher: string; authorized: boolean; authError: string | null }> {
+  return new Promise((resolve, reject) => {
+    const socket = tlsConnect({
+      host: ip,
+      servername: host,
+      port,
+      timeout: timeoutMs,
+      rejectUnauthorized: false,
+    });
+    const fail = (err: Error) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      reject(err);
+    };
+    socket.once("secureConnect", () => {
+      const result = {
+        protocol: socket.getProtocol() ?? "?",
+        cipher: socket.getCipher()?.name ?? "?",
+        authorized: socket.authorized,
+        authError: socket.authorizationError ? String(socket.authorizationError) : null,
+      };
+      socket.removeAllListeners();
+      socket.end();
+      resolve(result);
+    });
+    socket.once("timeout", () => fail(new Error("таймаут TLS-рукопожатия")));
+    socket.once("error", fail);
+  });
+}
+
 async function checkAuth(config: CdekConfig): Promise<CdekDiagnosticStep> {
   const t0 = Date.now();
+  const tokenUrl = `${config.baseUrl}/oauth/token`;
   try {
     // force=true — всегда новый токен, чтобы проверить актуальность кредов,
     // а не остаток жизни закэшированного.
@@ -176,24 +351,55 @@ async function checkAuth(config: CdekConfig): Promise<CdekDiagnosticStep> {
       id: "auth",
       title: "Авторизация (OAuth)",
       status: "ok",
-      message: `Токен получен (${(Date.now() - t0)} мс), живёт ~1 час.`,
+      message: `Токен получен (${Date.now() - t0} мс), живёт ~1 час.`,
       durationMs: Date.now() - t0,
-      details: [["Токен", maskSecret(token)]],
+      details: [
+        ["Токен", maskSecret(token)],
+        ["Точка авторизации", tokenUrl],
+      ],
     };
   } catch (error) {
-    const message = shortError(error);
+    const message = formatCdekError(error);
+    const details: [string, string][] = [["Точка авторизации", tokenUrl]];
+    if (error instanceof CdekNetworkError && error.code) {
+      details.push(["Сетевой код", error.code]);
+    }
     const credentialsProblem = /401|403|access_token|client/i.test(message);
+    const notFound = /HTTP 404/.test(message);
+    const hint = credentialsProblem
+      ? "Проверьте CDEK_ACCOUNT (это client_id) и CDEK_SECRET (secure password) в ЛК СДЭК → Настройки → API. Помните: ключи боевого и тестового контуров разные — боевые не работают на api.edu.cdek.ru и наоборот."
+      : notFound
+        ? "Хост отвечает, но путь не найден — CDEK_API_URL должен заканчиваться на /v2: боевой https://api.cdek.ru/v2, тестовый https://api.edu.cdek.ru/v2."
+        : networkHint(error);
     return {
       id: "auth",
       title: "Авторизация (OAuth)",
       status: "error",
       message: `СДЭК не выдал токен: ${message}`,
-      hint: credentialsProblem
-        ? "Проверьте CDEK_ACCOUNT (это client_id) и CDEK_SECRET (secure password) в ЛК СДЭК → Настройки → API. Убедитесь, что договор подключён к API."
-        : "Похоже, api.cdek.ru недоступен с сервера хостинга (сеть/файрвол/таймаут). Повторите позже или проверьте исходящий доступ.",
+      hint,
       durationMs: Date.now() - t0,
-      details: [],
+      details,
     };
+  }
+}
+
+/** Подсказка для сетевой ошибки авторизации — по этапу, где рвётся соединение. */
+function networkHint(error: unknown): string {
+  const intro = "Подробности — в шаге «Сеть» выше. ";
+  const stage = error instanceof CdekNetworkError ? error.stage : null;
+  switch (stage) {
+    case "dns":
+      return `${intro}DNS не находит хост API — проверьте CDEK_API_URL на опечатки.`;
+    case "tcp":
+      return `${intro}Порт API закрыт или исходящие соединения режет хостинг — проверьте curl -v с сервера.`;
+    case "tls":
+      return `${intro}Соединение рвётся на TLS — защита СДЭК или провайдер режет IP сервера. Проверьте curl -v с сервера, узнайте исходящий IP (curl ifconfig.me) и напишите в поддержку СДЭК (интеграция API) и хостеру.`;
+    case "timeout":
+      return `${intro}API не отвечает вовремя — повторите позже; если повторится, проверьте исходящие соединения сервера.`;
+    case "config":
+      return "Исправьте CDEK_API_URL: нужен полный https-адрес (боевой https://api.cdek.ru/v2, тестовый https://api.edu.cdek.ru/v2).";
+    default:
+      return `${intro}Похоже, API СДЭК недоступен с сервера хостинга (сеть/файрвол). Повторите позже или проверьте исходящий доступ.`;
   }
 }
 
@@ -225,7 +431,7 @@ async function checkLocation(city: string, config: CdekConfig): Promise<CdekDiag
       id: "location",
       title: "Справочник городов",
       status: "error",
-      message: `Поиск города не удался: ${shortError(error)}`,
+      message: `Поиск города не удался: ${formatCdekError(error)}`,
       hint: "Метод /location/cities недоступен — вероятно, проблема на стороне API СДЭК. Тариф считается по запасной цепочке.",
       durationMs: Date.now() - t0,
       details: [],
@@ -239,7 +445,7 @@ async function checkTariff(city: string): Promise<CdekDiagnosticStep> {
   const durationMs = Date.now() - t0;
   const days =
     quote.minDays !== undefined || quote.maxDays !== undefined
-      ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} раб. дн.`
+      ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} раб. дн`
       : "";
   const details: [string, string][] = [
     ["Тестовая посылка", `${city}, ${quote.weightGrams} г`],
@@ -290,9 +496,4 @@ function maskSecret(value: string) {
   if (!value) return "не задан";
   if (value.length <= 6) return `${value.length} симв. (скрыт)`;
   return `${value.slice(0, 2)}…${value.slice(-2)} (${value.length} симв.)`;
-}
-
-function shortError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 300);
 }
