@@ -303,7 +303,7 @@ async function resolveDestination(
   config: CdekConfig
 ): Promise<CdekLocation> {
   const address = (opts.address ?? "").trim().slice(0, 255);
-  // Код из виджета ПВЗ — самый точный способ: город уже найден в реестре СДЭК.
+  // Код из списка ПВЗ — самый точный способ: город уже найден в реестре СДЭК.
   const directCode = Number(opts.cityCode);
   if (Number.isFinite(directCode) && directCode > 0) {
     return { code: Math.round(directCode), city: cityQuery(opts.city) };
@@ -359,6 +359,108 @@ export async function resolveCityCode(city: string, config = getCdekConfig()): P
 
   putCache(cityCodeCache, key, value, value === null);
   return value;
+}
+
+/* ---------------- Список ПВЗ/постаматов ---------------- */
+
+/** Пункт выдачи СДЭК в нормализованном виде (для списка в чекауте). */
+export type CdekOffice = {
+  code: string;
+  name: string;
+  address: string;
+  city: string;
+  cityCode: number | null;
+  postalCode: string | null;
+  workTime: string | null;
+  type: string;
+};
+
+export type CdekOfficesResult =
+  | { ok: true; offices: CdekOffice[]; cityCode: number }
+  | {
+      ok: false;
+      offices: [];
+      cityCode: null;
+      reason: "not-configured" | "city-not-found" | "api-error";
+      detail: string;
+    };
+
+// Офисы меняются редко — общий putCache (6 часов) подходит.
+const officesCache = new Map<string, CacheEntry<CdekOffice[]>>();
+
+/**
+ * Список ПВЗ и постаматов СДЭК по названию города (метод «Список офисов»).
+ * Никогда не бросает исключение: при проблемах возвращает ok:false.
+ */
+export async function getCdekOffices(city: string, config = getCdekConfig()): Promise<CdekOfficesResult> {
+  if (!isCdekConfigured()) {
+    return { ok: false, offices: [], cityCode: null, reason: "not-configured", detail: "Договор СДЭК не настроен" };
+  }
+  const cityCode = await resolveCityCode(city, config);
+  if (!cityCode) {
+    const query = cityQuery(city) || city.trim();
+    return {
+      ok: false,
+      offices: [],
+      cityCode: null,
+      reason: "city-not-found",
+      detail: `Город «${query}» не найден в реестре СДЭК`,
+    };
+  }
+  const cacheKey = String(cityCode);
+  const cached = officesCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, offices: cached.value, cityCode };
+  }
+  try {
+    // Без фильтра type: забираем все офисы города и отбираем ПВЗ/постаматы сами —
+    // так не зависим от формата параметра фильтра в API.
+    const data = await authorizedFetch<unknown>(
+      `${config.baseUrl}/offices?city_code=${cityCode}`,
+      { method: "GET" },
+      config
+    );
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray((data as { items?: unknown })?.items)
+        ? ((data as { items: unknown[] }).items)
+        : [];
+    const offices = list
+      .map((item) => normalizeOffice(item, cityCode))
+      .filter((office): office is CdekOffice => office !== null);
+    offices.sort((a, b) =>
+      a.type === b.type ? a.address.localeCompare(b.address, "ru") : a.type === "PVZ" ? -1 : 1
+    );
+    putCache(officesCache, cacheKey, offices, false);
+    return { ok: true, offices, cityCode };
+  } catch (error) {
+    console.error("[cdek] offices request failed:", formatCdekError(error));
+    return { ok: false, offices: [], cityCode: null, reason: "api-error", detail: formatCdekError(error, 200) };
+  }
+}
+
+/** Сырой офис API v2 → slim-объект. ПВЗ и постаматы берём, остальное отбрасываем. */
+function normalizeOffice(item: unknown, cityCode: number): CdekOffice | null {
+  if (!item || typeof item !== "object") return null;
+  const raw = item as Record<string, unknown>;
+  const type = String(raw.type ?? "").toUpperCase();
+  if (type !== "PVZ" && type !== "POSTAMAT") return null;
+  const code = String(raw.code ?? "").trim();
+  const loc = (raw.location ?? {}) as Record<string, unknown>;
+  const address = String(loc.address_full ?? loc.address ?? "").trim();
+  if (!code || !address) return null;
+  const locCityCode = Number(loc.city_code);
+  const postalCode = String(loc.postal_code ?? "").replace(/\D/g, "").slice(0, 6);
+  return {
+    code: code.slice(0, 30),
+    name: String(raw.name ?? "").trim().slice(0, 200),
+    address: address.slice(0, 300),
+    city: String(loc.city ?? "").trim().slice(0, 120),
+    cityCode: Number.isFinite(locCityCode) && locCityCode > 0 ? Math.round(locCityCode) : cityCode,
+    postalCode: postalCode || null,
+    workTime: raw.work_time ? String(raw.work_time).trim().slice(0, 300) : null,
+    type,
+  };
 }
 
 /** Калькулятор СДЭК по коду тарифа с перебором запасных тарифов. */
@@ -486,6 +588,7 @@ function putCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, i
 export function clearCdekCaches() {
   quoteCache.clear();
   cityCodeCache.clear();
+  officesCache.clear();
   tokenCache = null;
 }
 
