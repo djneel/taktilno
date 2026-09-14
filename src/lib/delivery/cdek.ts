@@ -415,8 +415,9 @@ export async function getCdekOffices(city: string, config = getCdekConfig()): Pr
   try {
     // Без фильтра type: забираем все офисы города и отбираем ПВЗ/постаматы сами —
     // так не зависим от формата параметра фильтра в API.
+    // Эндпоинт — именно /deliverypoints (официальный SDK cdek-it/sdk2.0).
     const data = await authorizedFetch<unknown>(
-      `${config.baseUrl}/offices?city_code=${cityCode}`,
+      `${config.baseUrl}/deliverypoints?city_code=${cityCode}`,
       { method: "GET" },
       config
     );
