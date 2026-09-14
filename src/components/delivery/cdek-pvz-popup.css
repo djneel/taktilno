@@ -1,0 +1,22 @@
+/*
+ * Ограничение размеров popup-виджета СДЭК.
+ *
+ * Официальный виджет рисует модалку 800px без ограничения по высоте —
+ * на небольших экранах она вылезает за вьюпорт. Ужимаем до разумного:
+ * не шире 840px / 94vw и не выше 90vh.
+ *
+ * Селекторы привязаны к классам и scope-id @cdek-it/widget@3.13.1 —
+ * при смене версии виджета их нужно проверить заново.
+ * !important обязателен: собственные стили виджета тоже с !important.
+ */
+.cdek-pvz-popup-anchor .cdek-1rkrs0[data-v-13c5aab6] {
+  width: min(840px, 94vw) !important;
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  padding: 2rem 1rem 1rem !important;
+}
+
+.cdek-pvz-popup-anchor .cdek-c66dnq[data-v-13c5aab6] {
+  width: 100% !important;
+  max-width: 100% !important;
+}

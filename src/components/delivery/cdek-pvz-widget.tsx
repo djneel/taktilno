@@ -18,6 +18,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import "./cdek-pvz-popup.css";
+
 /** Запиненная версия виджета (см. DEPLOY.md, раздел «Виджет ПВЗ СДЭК»). */
 export const CDEK_WIDGET_VERSION = "3.13.1";
 const WIDGET_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/@cdek-it/widget@${CDEK_WIDGET_VERSION}/dist/cdek-widget.umd.js`;
