@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useCart } from "@/components/cart/cart-context";
 import {
   DELIVERY_METHODS,
@@ -19,13 +19,11 @@ import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
 import { CdekQuoteInfo, useCdekQuote } from "./cdek-fields";
 import {
-  CdekPvzPicker,
-  fetchCdekWidgetConfig,
-  warmupCdekWidget,
+  CdekOfficesFailNote,
+  CdekOfficesPicker,
+  type CdekOfficesFailReason,
   type CdekPvzChoice,
-  type CdekWidgetConfig,
-  type CdekWidgetFailReason,
-} from "@/components/delivery/cdek-pvz-widget";
+} from "./cdek-offices";
 import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
@@ -43,11 +41,10 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Виджет ПВЗ СДЭК: undefined — конфиг грузится, null — не загрузился (ручной ввод).
-  const [widgetConfig, setWidgetConfig] = useState<CdekWidgetConfig | null | undefined>(undefined);
-  const [widgetFailed, setWidgetFailed] = useState(false);
-  const [widgetFailReason, setWidgetFailReason] = useState<CdekWidgetFailReason | null>(null);
-  const [widgetAttempt, setWidgetAttempt] = useState(0);
+  // Список ПВЗ СДЭК: при недоступности — ручной ввод адреса пункта.
+  const [officesFailed, setOfficesFailed] = useState(false);
+  const [officesFailReason, setOfficesFailReason] = useState<CdekOfficesFailReason | null>(null);
+  const [officesAttempt, setOfficesAttempt] = useState(0);
   const [pvz, setPvz] = useState<CdekPvzChoice | null>(null);
 
   const delivery = DELIVERY_METHODS.find((method) => method.id === form.deliveryMethod) ?? DELIVERY_METHODS[0];
@@ -77,47 +74,23 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const deliveryIsFree = deliveryCost === 0;
   const total = subtotal + deliveryCost;
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchCdekWidgetConfig().then(
-      (cfg) => {
-        if (!cancelled) setWidgetConfig(cfg);
-      },
-      () => {
-        if (!cancelled) setWidgetConfig(null);
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Ключ Яндекс.Карт вшит в JS-бандл при сборке: если его добавили в переменные,
-  // но не сделали редеплой — сервер скажет enabled, а в браузере ключа нет.
-  const buildHasYandexKey = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim());
-  // Карта активна: СДЭК + договор + ключ (и на сервере, и в сборке) + скрипт завёлся.
-  const widgetActive = cdek && Boolean(widgetConfig?.enabled) && !widgetFailed && buildHasYandexKey;
-  // Сервер разрешил карту, а в сборке ключа нет — классический «забыли редеплой».
-  const widgetNeedsRedeploy =
-    cdek && Boolean(widgetConfig?.enabled) && !widgetFailed && !buildHasYandexKey;
-
-  // Виджет включён — греем тяжёлые скрипты сразу, пока покупатель заполняет
-  // контакты: к клику «Выбрать пункт» UMD и лоадер Яндекс.Карт уже в кеше.
-  useEffect(() => {
-    if (widgetConfig?.enabled && buildHasYandexKey) warmupCdekWidget();
-  }, [widgetConfig, buildHasYandexKey]);
+  // Список ПВЗ активен: СДЭК выбран и API офисов отвечает (иначе — ручной ввод).
+  const officesActive = cdek && !officesFailed;
 
   const handlePvzChoose = (choice: CdekPvzChoice) => {
     setPvz(choice);
-    // Город из виджета точнее ручного — подставляем для котировки.
+    // Город из списка точнее ручного — подставляем для котировки.
     if (choice.office.city) {
       setForm((current) => ({ ...current, city: choice.office.city }));
     }
   };
 
-  // Ручная правка города после выбора ПВЗ — выбор сбрасываем (город уже другой).
+  // Ручная правка города: выбор ПВЗ сбрасываем (город уже другой),
+  // список показываем заново (вдруг прошлая ошибка была из-за опечатки).
   const handleCityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setPvz(null);
+    setOfficesFailed(false);
+    setOfficesFailReason(null);
     setForm((current) => ({ ...current, city: event.target.value }));
   };
 
@@ -145,8 +118,8 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
       return;
     }
 
-    if (cdek && widgetActive && !pvz) {
-      setError("Выберите пункт выдачи СДЭК на карте — код пункта нужен для накладной");
+    if (cdek && officesActive && !pvz) {
+      setError("Выберите пункт выдачи СДЭК из списка — код пункта нужен для накладной");
       return;
     }
 
@@ -323,17 +296,15 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                 onChange={cdek ? handleCityChange : set("city")}
                 autoComplete="address-level2"
               />
-              {cdek && widgetActive && (
-                <CdekPvzPicker
-                  key={widgetAttempt}
-                  config={widgetConfig as CdekWidgetConfig}
+              {cdek && officesActive && (
+                <CdekOfficesPicker
+                  key={officesAttempt}
                   city={form.city}
-                  weightGrams={cdekQuote?.weightGrams ?? 500}
                   selected={pvz}
                   onChoose={handlePvzChoose}
-                  onWidgetError={(reason) => {
-                    setWidgetFailed(true);
-                    setWidgetFailReason(reason);
+                  onOfficesError={(reason) => {
+                    setOfficesFailed(true);
+                    setOfficesFailReason(reason);
                   }}
                 />
               )}
@@ -346,9 +317,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   city={form.city}
                 />
               )}
-              {cdek && widgetConfig === undefined ? (
-                <div className="h-14 animate-pulse rounded-2xl bg-bg2/60 ring-1 ring-line/60" aria-hidden="true" />
-              ) : cdek && widgetActive ? null : (
+              {cdek && officesActive ? null : (
                 <Input
                   label={delivery.addressLabel}
                   required
@@ -357,17 +326,16 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   autoComplete="street-address"
                 />
               )}
-              {cdek && widgetFailed && widgetConfig?.enabled && widgetFailReason && (
-                <WidgetFailNote
-                  reason={widgetFailReason}
+              {cdek && officesFailed && officesFailReason && (
+                <CdekOfficesFailNote
+                  reason={officesFailReason}
                   onRetry={() => {
-                    setWidgetFailed(false);
-                    setWidgetFailReason(null);
-                    setWidgetAttempt((attempt) => attempt + 1);
+                    setOfficesFailed(false);
+                    setOfficesFailReason(null);
+                    setOfficesAttempt((attempt) => attempt + 1);
                   }}
                 />
               )}
-              {cdek && widgetNeedsRedeploy && <WidgetFailNote reason="no-key" />}
             </>
           )}
 
@@ -457,30 +425,6 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         </p>
       </aside>
     </form>
-  );
-}
-
-const WIDGET_FAIL_TEXT: Record<CdekWidgetFailReason, string> = {
-  "no-key": "Карта пунктов выдачи недоступна: сайт собран без ключа Яндекс.Карт (нужен редеплой).",
-  cdn: "Карта пунктов выдачи недоступна: не загрузился скрипт виджета (CDN).",
-  init: "Карта пунктов выдачи недоступна: виджет не запустился.",
-};
-
-/** Пояснение, почему нет карты, + ручной ввод адреса как запасной путь. */
-function WidgetFailNote({ reason, onRetry }: { reason: CdekWidgetFailReason; onRetry?: () => void }) {
-  return (
-    <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-      {WIDGET_FAIL_TEXT[reason]} Введите адрес ПВЗ вручную.{" "}
-      {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="font-bold text-green underline underline-offset-2"
-        >
-          Попробовать карту снова
-        </button>
-      )}
-    </div>
   );
 }
 

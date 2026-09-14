@@ -128,16 +128,11 @@ function PochtaStatus() {
 function CdekStatus() {
   const config = getCdekConfig();
   const configured = isCdekConfigured();
-  const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
-  const widgetStatus = !configured
-    ? "выключен (нет договора СДЭК)"
-    : !yandexKey
-      ? "выключен (нет ключа Яндекс.Карт)"
-      : "включён (карта в чекауте и на странице доставки)";
+  const officesStatus = configured ? "включён (список ПВЗ в чекауте)" : "выключен (нет договора СДЭК)";
   const rows: [string, string][] = [
     ["Договор с СДЭК", configured ? "подключён (живой тариф)" : "не настроен (стандартный тариф 300 ₽)"],
     ["Контур API", cdekContourLabel(config)],
-    ["Виджет ПВЗ", widgetStatus],
+    ["Список ПВЗ", officesStatus],
     ["Город отправления", config.fromCityCode ? `${config.fromCity} (код ${config.fromCityCode})` : config.fromCity],
     ["Код тарифа", String(config.tariffCode)],
     ["Вес изделия / упаковки", `${config.defaultItemWeightG} г / ${config.packagingWeightG} г`],

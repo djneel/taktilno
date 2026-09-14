@@ -24,7 +24,7 @@ import {
 import { getCdekQuote } from "./delivery/cdek";
 
 /**
- * Пункт выдачи СДЭК, выбранный покупателем в виджете на карте.
+ * Пункт выдачи СДЭК, выбранный покупателем из списка в чекауте.
  * Код едет в накладную, остальное — для точного тарифа и отображения.
  */
 export type CdekPvzSelection = {
@@ -60,7 +60,7 @@ export class CheckoutError extends Error {
   }
 }
 
-/** Чистит выбор ПВЗ из виджета: код обязателен, остальное опционально. */
+/** Чистит выбор ПВЗ из чекаута: код обязателен, остальное опционально. */
 function sanitizePvzSelection(input: CheckoutInput["cdekPvz"]): CdekPvzSelection | null {
   if (!input || typeof input !== "object") return null;
   const code = String(input.code ?? "").trim().slice(0, 30);
