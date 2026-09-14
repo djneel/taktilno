@@ -21,8 +21,10 @@ import { CdekQuoteInfo, useCdekQuote } from "./cdek-fields";
 import {
   CdekPvzPicker,
   fetchCdekWidgetConfig,
+  warmupCdekWidget,
   type CdekPvzChoice,
   type CdekWidgetConfig,
+  type CdekWidgetFailReason,
 } from "@/components/delivery/cdek-pvz-widget";
 import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
 
@@ -44,6 +46,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   // Виджет ПВЗ СДЭК: undefined — конфиг грузится, null — не загрузился (ручной ввод).
   const [widgetConfig, setWidgetConfig] = useState<CdekWidgetConfig | null | undefined>(undefined);
   const [widgetFailed, setWidgetFailed] = useState(false);
+  const [widgetFailReason, setWidgetFailReason] = useState<CdekWidgetFailReason | null>(null);
   const [widgetAttempt, setWidgetAttempt] = useState(0);
   const [pvz, setPvz] = useState<CdekPvzChoice | null>(null);
 
@@ -89,8 +92,20 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
     };
   }, []);
 
-  // Карта активна: СДЭК + договор + ключ Яндекс.Карт + скрипт завёлся.
-  const widgetActive = cdek && Boolean(widgetConfig?.enabled) && !widgetFailed;
+  // Ключ Яндекс.Карт вшит в JS-бандл при сборке: если его добавили в переменные,
+  // но не сделали редеплой — сервер скажет enabled, а в браузере ключа нет.
+  const buildHasYandexKey = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim());
+  // Карта активна: СДЭК + договор + ключ (и на сервере, и в сборке) + скрипт завёлся.
+  const widgetActive = cdek && Boolean(widgetConfig?.enabled) && !widgetFailed && buildHasYandexKey;
+  // Сервер разрешил карту, а в сборке ключа нет — классический «забыли редеплой».
+  const widgetNeedsRedeploy =
+    cdek && Boolean(widgetConfig?.enabled) && !widgetFailed && !buildHasYandexKey;
+
+  // Виджет включён — греем тяжёлые скрипты сразу, пока покупатель заполняет
+  // контакты: к клику «Выбрать пункт» UMD и лоадер Яндекс.Карт уже в кеше.
+  useEffect(() => {
+    if (widgetConfig?.enabled && buildHasYandexKey) warmupCdekWidget();
+  }, [widgetConfig, buildHasYandexKey]);
 
   const handlePvzChoose = (choice: CdekPvzChoice) => {
     setPvz(choice);
@@ -316,7 +331,10 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   weightGrams={cdekQuote?.weightGrams ?? 500}
                   selected={pvz}
                   onChoose={handlePvzChoose}
-                  onWidgetError={() => setWidgetFailed(true)}
+                  onWidgetError={(reason) => {
+                    setWidgetFailed(true);
+                    setWidgetFailReason(reason);
+                  }}
                 />
               )}
               {cdek && (
@@ -339,21 +357,17 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                   autoComplete="street-address"
                 />
               )}
-              {cdek && widgetFailed && widgetConfig?.enabled && (
-                <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-                  Карта пунктов выдачи недоступна — введите адрес ПВЗ вручную.{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setWidgetFailed(false);
-                      setWidgetAttempt((attempt) => attempt + 1);
-                    }}
-                    className="font-bold text-green underline underline-offset-2"
-                  >
-                    Попробовать карту снова
-                  </button>
-                </div>
+              {cdek && widgetFailed && widgetConfig?.enabled && widgetFailReason && (
+                <WidgetFailNote
+                  reason={widgetFailReason}
+                  onRetry={() => {
+                    setWidgetFailed(false);
+                    setWidgetFailReason(null);
+                    setWidgetAttempt((attempt) => attempt + 1);
+                  }}
+                />
               )}
+              {cdek && widgetNeedsRedeploy && <WidgetFailNote reason="no-key" />}
             </>
           )}
 
@@ -443,6 +457,30 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         </p>
       </aside>
     </form>
+  );
+}
+
+const WIDGET_FAIL_TEXT: Record<CdekWidgetFailReason, string> = {
+  "no-key": "Карта пунктов выдачи недоступна: сайт собран без ключа Яндекс.Карт (нужен редеплой).",
+  cdn: "Карта пунктов выдачи недоступна: не загрузился скрипт виджета (CDN).",
+  init: "Карта пунктов выдачи недоступна: виджет не запустился.",
+};
+
+/** Пояснение, почему нет карты, + ручной ввод адреса как запасной путь. */
+function WidgetFailNote({ reason, onRetry }: { reason: CdekWidgetFailReason; onRetry?: () => void }) {
+  return (
+    <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
+      {WIDGET_FAIL_TEXT[reason]} Введите адрес ПВЗ вручную.{" "}
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="font-bold text-green underline underline-offset-2"
+        >
+          Попробовать карту снова
+        </button>
+      )}
+    </div>
   );
 }
 

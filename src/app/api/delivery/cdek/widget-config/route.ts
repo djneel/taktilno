@@ -31,11 +31,14 @@ export async function GET() {
     configured,
     yandexKeyConfigured,
     servicePath: "/api/delivery/cdek/widget-service",
+    // Полная форма объекта from (с null) — как в примере из wiki виджета:
+    // частичный объект может не пройти yup-валидацию конструктора.
     from: {
       country_code: "RU",
       city: config.fromCity,
-      ...(config.fromPostalCode.length === 6 ? { postal_code: config.fromPostalCode } : {}),
-      ...(config.fromCityCode ? { code: config.fromCityCode } : {}),
+      postal_code: config.fromPostalCode.length === 6 ? config.fromPostalCode : null,
+      code: config.fromCityCode ?? null,
+      address: null,
     },
     tariffs: { office: officeTariffs, door: [], pickup: [368] },
     package: {

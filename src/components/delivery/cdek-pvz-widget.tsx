@@ -6,7 +6,8 @@
  * Два режима:
  *   CdekPvzPicker — чекаут: кнопка открывает карту в popup-окне, покупатель
  *   выбирает ПВЗ (onChoose), выбор летит в заказ (код — в накладную).
- *   Тяжёлый скрипт (~700 КБ) грузится лениво, только по клику.
+ *   Тяжёлые скрипты (UMD ~700 КБ + лоадер Яндекс.Карт) прогреваются заранее
+ *   через warmupCdekWidget(), как только известно, что виджет включён.
  *   Тариф виджета — ориентир; авторитетная цена — наш серверный расчёт.
  *
  *   CdekPvzMap — страница доставки: встроенная карта ПВЗ без выбора
@@ -18,6 +19,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import "./cdek-pvz-popup.css";
+
 /** Запиненная версия виджета (см. DEPLOY.md, раздел «Виджет ПВЗ СДЭК»). */
 export const CDEK_WIDGET_VERSION = "3.13.1";
 const WIDGET_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/@cdek-it/widget@${CDEK_WIDGET_VERSION}/dist/cdek-widget.umd.js`;
@@ -27,9 +30,13 @@ const WIDGET_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/@cdek-it/widget@${CDEK_W
 export type CdekWidgetFrom = {
   country_code: string;
   city: string;
-  postal_code?: string;
-  code?: number;
+  postal_code?: string | null;
+  code?: number | null;
+  address?: string | null;
 };
+
+/** Почему карта недоступна: нет ключа в сборке / не грузится CDN / упал конструктор. */
+export type CdekWidgetFailReason = "no-key" | "cdn" | "init";
 
 export type CdekWidgetTariff = {
   tariff_code: number;
@@ -129,18 +136,65 @@ export function loadCdekWidget(): Promise<CdekWidgetConstructor> {
         if (window.CDEKWidget) resolve(window.CDEKWidget);
         else {
           scriptPromise = null;
-          reject(new Error("Виджет СДЭК загрузился, но не инициализировался"));
+          reject(cdnError("Виджет СДЭК загрузился, но не инициализировался"));
         }
       };
       script.onerror = () => {
         scriptPromise = null;
         script.remove();
-        reject(new Error("Не удалось загрузить виджет СДЭК с CDN"));
+        reject(cdnError("Не удалось загрузить виджет СДЭК с CDN"));
       };
       document.head.appendChild(script);
     });
   }
   return scriptPromise;
+}
+
+function cdnError(message: string) {
+  return Object.assign(new Error(message), { code: "cdn" });
+}
+
+function isCdnError(error: unknown) {
+  return (
+    error instanceof Error && (error as { code?: unknown }).code === "cdn"
+  );
+}
+
+let warmedUp = false;
+
+/**
+ * Прогрев тяжёлых скриптов карты ДО клика: UMD виджета (~700 КБ),
+ * preconnect к хостам и preload лоадера Яндекс.Карт v3.
+ *
+ * Вызывать, как только известно, что виджет включён (в чекауте — сразу при
+ * получении конфига, пока покупатель заполняет контакты). Квоту Яндекс.Карт
+ * не тратит: засчитываются только инициализации карты, а не скачивание JS.
+ * Идемпотентна: повторные вызовы — no-op.
+ */
+export function warmupCdekWidget() {
+  if (typeof window === "undefined" || warmedUp) return;
+  const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
+  if (!yandexKey) return;
+  warmedUp = true;
+  // Тот же промис, что использует open(), — к клику скрипт уже в кеше.
+  loadCdekWidget().catch(() => {
+    // Клик повторит загрузку и покажет ошибку, если CDN недоступен.
+  });
+  // DNS+TLS заранее — экономим рукопожатия в момент открытия карты.
+  for (const href of ["https://cdn.jsdelivr.net", "https://api-maps.yandex.ru", "https://geocode-maps.yandex.ru"]) {
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  // Точный URL лоадера, который запросит виджет (vue-yandex-maps внутри
+  // бандла 3.13.1: `${domain}/${version}/` + lang, apikey — в этом порядке).
+  // Классический <script> виджета подхватит предзагруженное из кеша.
+  const preload = document.createElement("link");
+  preload.rel = "preload";
+  preload.as = "script";
+  preload.href = `https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=${encodeURIComponent(yandexKey)}`;
+  document.head.appendChild(preload);
 }
 
 /* ---------------- Конфиг виджета с сервера ---------------- */
@@ -171,9 +225,10 @@ function baseOptions(config: CdekWidgetConfig, yandexKey: string) {
     servicePath: config.servicePath,
     // Оплата только онлайн и только предоплата — фильтры «оплата в ПВЗ» прячем,
     // примерочную и тип точки оставляем на усмотрение покупателя.
-    hideFilters: { have_cash: true, have_cashless: true },
+    // Объекты полные (как в wiki) — частичные может не принять валидация.
+    hideFilters: { have_cash: true, have_cashless: true, is_dressing_room: false, type: false },
     // Способ доставки у нас только «до пункта выдачи» — курьера прячем.
-    hideDeliveryOptions: { door: true },
+    hideDeliveryOptions: { door: true, office: false },
     tariffs: config.tariffs,
     lang: "rus",
     currency: "RUB",
@@ -198,8 +253,12 @@ export function CdekPvzPicker({
   weightGrams: number;
   selected: CdekPvzChoice | null;
   onChoose: (choice: CdekPvzChoice) => void;
-  /** Скрипт или виджет не завелись — родитель откатывается на ручной ввод. */
-  onWidgetError: () => void;
+  /**
+   * Скрипт или виджет не завелись — родитель откатывается на ручной ввод.
+   * Причина (для понятной подсказки): no-key — ключа нет в сборке (нужен
+   * редеплой), cdn — не загрузился скрипт, init — упал конструктор/карта.
+   */
+  onWidgetError: (reason: CdekWidgetFailReason) => void;
 }) {
   const rootId = `cdek-map-${useId().replace(/:/g, "")}`;
   const instanceRef = useRef<CdekWidgetInstance | null>(null);
@@ -213,6 +272,11 @@ export function CdekPvzPicker({
     callbacksRef.current = { onChoose, onWidgetError };
     configRef.current = config;
   });
+
+  // Кнопка видна — начинаем греть скрипты, не дожидаясь клика.
+  useEffect(() => {
+    warmupCdekWidget();
+  }, []);
 
   useEffect(() => {
     const instance = instanceRef.current;
@@ -239,17 +303,22 @@ export function CdekPvzPicker({
     }
   }, [weightGrams]);
 
-  const fail = () => {
+  const fail = (reason: CdekWidgetFailReason, detail: unknown) => {
+    console.error(
+      "[cdek-widget] карта недоступна:",
+      reason,
+      detail instanceof Error ? detail.message : detail
+    );
     if (failedRef.current) return;
     failedRef.current = true;
     setOpening(false);
-    callbacksRef.current.onWidgetError();
+    callbacksRef.current.onWidgetError(reason);
   };
 
   const open = async () => {
     const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
     if (!yandexKey) {
-      fail();
+      fail("no-key", "NEXT_PUBLIC_YANDEX_MAPS_API_KEY пуст в сборке — нужен редеплой");
       return;
     }
     // Инстанс уже есть — двигаем карту к актуальному городу и открываем.
@@ -257,8 +326,8 @@ export function CdekPvzPicker({
       try {
         if (city.trim()) instanceRef.current.updateLocation(city.trim());
         instanceRef.current.open();
-      } catch {
-        fail();
+      } catch (error) {
+        fail("init", error);
       }
       return;
     }
@@ -311,15 +380,15 @@ export function CdekPvzPicker({
       failedRef.current = false;
       setOpening(false);
       instance.open();
-    } catch {
-      fail();
+    } catch (error) {
+      fail(isCdnError(error) ? "cdn" : "init", error);
     }
   };
 
   return (
     <div className="space-y-3">
       {/* Якорь для popup-виджета (сам виджет рисует модалку поверх страницы). */}
-      <div id={rootId} aria-hidden="true" />
+      <div id={rootId} className="cdek-pvz-popup-anchor" aria-hidden="true" />
       {selected ? (
         <div className="rounded-2xl bg-green/10 p-4 ring-1 ring-green/30">
           <div className="text-xs font-bold uppercase tracking-wider text-green">
@@ -401,6 +470,7 @@ export function CdekPvzMap({ config, defaultLocation }: { config: CdekWidgetConf
     let cancelled = false;
     const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
     if (!yandexKey) return;
+    warmupCdekWidget();
     (async () => {
       try {
         const CDEKWidget = await loadCdekWidget();
