@@ -25,6 +25,24 @@ type QuoteItem = { productId: number; quantity: number };
 const STANDARD_DELIVERY_COST = 300;
 
 /**
+ * Пояснение к стандартному тарифу в плашке чекаута — зависит от причины fallback.
+ *
+ * weight-limit — штатная ситуация, а не сбой: посылка тяжелее предела
+ * онлайн-расчёта (CDEK_MAX_WEIGHT_G), поэтому покупателю нельзя показывать
+ * «сайт СДЭК недоступен» — вместо этого объясняем, что тариф уточним.
+ */
+function cdekFallbackNote(reason?: CdekQuoteDto["reason"]) {
+  switch (reason) {
+    case "weight-limit":
+      return " · посылка тяжелее лимита онлайн-расчёта, тариф уточним при оформлении";
+    case "not-configured":
+      return " · тариф СДЭК уточним при оформлении, ориентир — стандартный";
+    default:
+      return " · сайт СДЭК недоступен, взят стандартный тариф";
+  }
+}
+
+/**
  * Живой тариф СДЭК по городу получателя с дебаунсом.
  * Ошибки не блокируют оформление: сервер посчитает сам и применит стандартный тариф.
  */
@@ -169,11 +187,7 @@ export function CdekQuoteInfo({
         <span className="text-muted"> · тариф СДЭК по вашему городу</span>
       )}
       {quote.fallback && !freeByThreshold && (
-        <span className="text-muted">
-          {quote.reason === "not-configured"
-            ? " · тариф СДЭК уточним при оформлении, ориентир — стандартный"
-            : " · сайт СДЭК недоступен, взят стандартный тариф"}
-        </span>
+        <span className="text-muted">{cdekFallbackNote(quote.reason)}</span>
       )}
       <span className="mt-1 block text-xs text-muted">
         Доставка в пункт выдачи СДЭК. Отслеживание — по трек-номеру после отправки.
