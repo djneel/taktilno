@@ -264,6 +264,9 @@ export function CdekPvzPicker({
   const instanceRef = useRef<CdekWidgetInstance | null>(null);
   const [opening, setOpening] = useState(false);
   const failedRef = useRef(false);
+  // Карта хоть раз полностью инициализировалась (сработал onReady виджета).
+  const readyRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Актуальные колбэки для замыканий виджета (пересоздавать инстанс не хотим).
   const callbacksRef = useRef({ onChoose, onWidgetError });
@@ -282,6 +285,10 @@ export function CdekPvzPicker({
     const instance = instanceRef.current;
     return () => {
       instanceRef.current = null;
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       try {
         instance?.destroy();
       } catch {
@@ -315,6 +322,27 @@ export function CdekPvzPicker({
     callbacksRef.current.onWidgetError(reason);
   };
 
+  // Виджет глотает ошибки карты (белый экран без колбэка): если onReady
+  // (стреляет после полной загрузки UI виджета) не сработал за 40 секунд
+  // после открытия — считаем карту недоступной и откатываемся на ручной
+  // ввод: родитель покажет подсказку и кнопку «Попробовать карту снова».
+  const armWatchdog = () => {
+    if (readyRef.current || watchdogRef.current) return;
+    watchdogRef.current = setTimeout(() => {
+      watchdogRef.current = null;
+      if (readyRef.current) return;
+      try {
+        instanceRef.current?.close();
+      } catch {
+        // Уже закрыт или мёртв.
+      }
+      fail(
+        "init",
+        "карта не инициализировалась за 40 секунд — вероятно, блокировщик рекламы режет api-maps.yandex.ru или Яндекс недоступен"
+      );
+    }, 40_000);
+  };
+
   const open = async () => {
     const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
     if (!yandexKey) {
@@ -325,6 +353,7 @@ export function CdekPvzPicker({
     if (instanceRef.current) {
       try {
         if (city.trim()) instanceRef.current.updateLocation(city.trim());
+        armWatchdog();
         instanceRef.current.open();
       } catch (error) {
         fail("init", error);
@@ -375,10 +404,20 @@ export function CdekPvzPicker({
             },
           });
         },
+        // onReady стреляет после полной загрузки UI (карта + офисы):
+        // если не стрельнул — карта не завелась (см. armWatchdog).
+        onReady: () => {
+          readyRef.current = true;
+          if (watchdogRef.current) {
+            clearTimeout(watchdogRef.current);
+            watchdogRef.current = null;
+          }
+        },
       });
       instanceRef.current = instance;
       failedRef.current = false;
       setOpening(false);
+      armWatchdog();
       instance.open();
     } catch (error) {
       fail(isCdnError(error) ? "cdn" : "init", error);
