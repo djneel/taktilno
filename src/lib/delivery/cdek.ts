@@ -396,6 +396,17 @@ function putCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, i
   });
 }
 
+/**
+ * Диагностика: очистить кэши городов, тарифов и токен авторизации.
+ * Следующий расчёт гарантированно пойдёт в живое API СДЭК, а не из кэша.
+ * Вызывается только из админской диагностики, для покупателей кэш просто наполнится заново.
+ */
+export function clearCdekCaches() {
+  quoteCache.clear();
+  cityCodeCache.clear();
+  tokenCache = null;
+}
+
 function shortError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return message.slice(0, 300);
@@ -403,8 +414,9 @@ function shortError(error: unknown) {
 
 /* ---------------- Авторизация и запросы ---------------- */
 
-/** OAuth-токен СДЭК (client_credentials). Живёт час — кэшируем в памяти. */
-async function getAccessToken(config: CdekConfig, force = false): Promise<string> {
+/** OAuth-токен СДЭК (client_credentials). Живёт час — кэшируем в памяти.
+ *  Экспортирован для модуля диагностики (cdek-diagnostics.ts). */
+export async function getAccessToken(config: CdekConfig, force = false): Promise<string> {
   if (!force && tokenCache && tokenCache.expiresAt > Date.now()) return tokenCache.value;
 
   const body = new URLSearchParams({

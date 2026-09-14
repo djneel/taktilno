@@ -24,6 +24,7 @@ import {
 import { ADMIN_COOKIE, checkPassword, createSessionToken, isAdminAuthenticated } from "./auth";
 import { slugify } from "./utils";
 import { setSetting } from "./seed";
+import type { CdekDiagnosticsReport } from "./delivery/cdek-diagnostics";
 
 async function requireAdmin() {
   if (!(await isAdminAuthenticated())) throw new Error("Требуется авторизация");
@@ -429,6 +430,23 @@ export async function testCdekAction(city: string): Promise<{ ok: boolean; messa
     };
   } catch (e) {
     return { ok: false, message: `Ошибка расчёта: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+export async function runCdekDiagnosticsAction(
+  city: string
+): Promise<{ ok: boolean; message?: string; report?: CdekDiagnosticsReport }> {
+  await requireAdmin();
+  const target = city.trim();
+  if (target.length < 2) {
+    return { ok: false, message: "Укажите город получателя (например, Москва)." };
+  }
+  try {
+    const { runCdekDiagnostics } = await import("./delivery/cdek-diagnostics");
+    const report = await runCdekDiagnostics(target);
+    return { ok: report.ok, report };
+  } catch (e) {
+    return { ok: false, message: `Ошибка диагностики: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
