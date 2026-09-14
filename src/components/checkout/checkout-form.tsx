@@ -292,7 +292,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                 </>
               )}
               <Input
-                label="Город"
+                label="Город получателя"
                 required
                 value={form.city}
                 onChange={cdek ? handleCityChange : set("city")}
