@@ -7,7 +7,9 @@ import { saveSettingsAction } from "@/lib/admin-actions";
 import { Button, Card, Field, Input, PageTitle, Select } from "@/components/admin/ui";
 import { ImageUrlField } from "@/components/admin/image-url-field";
 import { PochtaTestButton } from "@/components/admin/pochta-test-button";
+import { CdekTestButton } from "@/components/admin/cdek-test-button";
 import { getRussianPostConfig, isOtpravkaConfigured } from "@/lib/delivery/russian-post";
+import { getCdekConfig, isCdekConfigured, isCdekTestMode } from "@/lib/delivery/cdek";
 
 const STEPS = ["01 — Идея", "02 — 3D-модель", "03 — Печать", "04 — Сборка", "05 — ТАКТИЛЬНО"];
 
@@ -71,6 +73,18 @@ export default async function AdminSettingsPage() {
           </div>
         </Card>
 
+        <Card>
+          <h2 className="mb-1 text-lg font-bold">СДЭК</h2>
+          <p className="mb-4 text-sm text-muted">
+            Тариф «Посылка склад-склад» считается по городу получателя через API СДЭК v2 (нужен договор).
+            Настройки — через переменные окружения на хостинге (см. DEPLOY.md).
+          </p>
+          <CdekStatus />
+          <div className="mt-4">
+            <CdekTestButton />
+          </div>
+        </Card>
+
         <Card className="lg:col-span-2">
           <h2 className="mb-4 text-lg font-bold">«От идеи до фигурки» — фото этапов</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -96,6 +110,28 @@ function PochtaStatus() {
     ["Объект тарификации", config.tariffObject],
     ["Вес изделия / упаковки", `${config.defaultItemWeightG} г / ${config.packagingWeightG} г`],
     ["API «Отправка»", otpravka ? "подключена (тарифы по договору)" : "не настроена (публичный тариф)"],
+  ];
+  return (
+    <dl className="grid gap-2 rounded-2xl bg-bg2/60 p-4 text-sm ring-1 ring-line/60">
+      {rows.map(([k, v]) => (
+        <div key={k} className="flex items-baseline justify-between gap-3">
+          <dt className="text-xs uppercase tracking-wider text-muted">{k}</dt>
+          <dd className="text-right font-semibold">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function CdekStatus() {
+  const config = getCdekConfig();
+  const configured = isCdekConfigured();
+  const rows: [string, string][] = [
+    ["Договор с СДЭК", configured ? "подключён (живой тариф)" : "не настроен (стандартный тариф 300 ₽)"],
+    ["Контур API", isCdekTestMode() ? "тестовый (CDEK_API_URL)" : "боевой api.cdek.ru"],
+    ["Город отправления", config.fromCityCode ? `${config.fromCity} (код ${config.fromCityCode})` : config.fromCity],
+    ["Код тарифа", String(config.tariffCode)],
+    ["Вес изделия / упаковки", `${config.defaultItemWeightG} г / ${config.packagingWeightG} г`],
   ];
   return (
     <dl className="grid gap-2 rounded-2xl bg-bg2/60 p-4 text-sm ring-1 ring-line/60">

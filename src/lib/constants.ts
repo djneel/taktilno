@@ -59,16 +59,19 @@ export const ONLINE_PAYMENT_METHOD = "yookassa" as const;
 /** Идентификатор способа доставки Почтой России (тариф считается по индексу). */
 export const RUSSIAN_POST_METHOD_ID = "russian_post";
 
+/** Идентификатор способа доставки СДЭК (тариф считается по городу получателя). */
+export const CDEK_METHOD_ID = "cdek_pvz";
+
 /**
  * Доступные покупателю способы получения заказа.
  * Идентификатор выбранного способа сохраняется в orders.delivery_method.
  */
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
   {
-    id: "cdek_pvz",
+    id: CDEK_METHOD_ID,
     provider: "cdek",
     name: "СДЭК — пункт выдачи",
-    description: "Доставка в выбранный пункт СДЭК",
+    description: "Доставка в выбранный пункт СДЭК, тариф СДЭК по вашему городу",
     cost: FIXED_DELIVERY_COST,
     needsCity: true,
     needsAddress: true,
@@ -152,15 +155,32 @@ export function isRussianPost(id: string) {
   return id === RUSSIAN_POST_METHOD_ID;
 }
 
-export function getDeliveryCost(id: string, subtotal: number, opts?: { russianPostCost?: number }) {
+export function isCdek(id: string) {
+  return getDeliveryMethod(id)?.provider === "cdek";
+}
+
+/** Живые тарифы служб доставки, посчитанные по API (ниже порога бесплатной доставки). */
+export type QuotedDeliveryCosts = {
+  /** Тариф Почты России по индексу получателя (src/lib/delivery/russian-post.ts). */
+  russianPostCost?: number;
+  /** Тариф СДЭК по городу получателя (src/lib/delivery/cdek.ts). */
+  cdekCost?: number;
+};
+
+export function getDeliveryCost(id: string, subtotal: number, opts?: QuotedDeliveryCosts) {
   const method = getDeliveryMethod(id);
   if (!method) return 0;
   if (isFreeDelivery(id, subtotal)) return 0;
-  // Почта России: ниже порога бесплатной доставки берём живой тариф из API
-  // (см. src/lib/delivery/russian-post.ts); пока тарифа нет — фиксированные 300 ₽.
-  if (isRussianPost(id) && opts?.russianPostCost !== undefined) {
-    const quoted = Math.round(opts.russianPostCost);
-    return Number.isFinite(quoted) && quoted >= 0 ? quoted : method.cost;
+  // Почта России и СДЭК ниже порога бесплатной доставки считаются по живому
+  // тарифу из API; пока тарифа нет — фиксированные 300 ₽ (FIXED_DELIVERY_COST).
+  const quoted = isRussianPost(id)
+    ? opts?.russianPostCost
+    : method.provider === "cdek"
+      ? opts?.cdekCost
+      : undefined;
+  if (quoted !== undefined) {
+    const rounded = Math.round(quoted);
+    return Number.isFinite(rounded) && rounded >= 0 ? rounded : method.cost;
   }
   return method.cost;
 }

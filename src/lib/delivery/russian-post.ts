@@ -31,6 +31,7 @@
  */
 
 import { FIXED_DELIVERY_COST } from "@/lib/constants";
+import { estimateParcelWeightGrams as estimateWeight } from "./weight";
 
 export type RussianPostQuoteSource = "otpravka" | "tariff" | "fallback";
 
@@ -158,16 +159,12 @@ export function estimateParcelWeightGrams(
   lines: { weightGrams?: number | null; quantity: number }[],
   config: RussianPostConfig = getRussianPostConfig()
 ) {
-  const items = lines.reduce((sum, line) => {
-    const perUnit =
-      line.weightGrams && Number.isFinite(line.weightGrams) && line.weightGrams > 0
-        ? Math.round(line.weightGrams)
-        : config.defaultItemWeightG;
-    const qty = Math.max(1, Math.min(99, Math.floor(line.quantity) || 1));
-    return sum + perUnit * qty;
-  }, 0);
   // Минимум 100 г — легче посылок тарификатор не считает.
-  return Math.max(100, items + config.packagingWeightG);
+  return estimateWeight(lines, {
+    defaultItemWeightG: config.defaultItemWeightG,
+    packagingWeightG: config.packagingWeightG,
+    minWeightGrams: 100,
+  });
 }
 
 /* ---------------- Расчёт тарифа ---------------- */

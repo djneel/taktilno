@@ -321,17 +321,18 @@ export async function updateOrderTrackingAction(formData: FormData) {
   await requireAdmin();
   const id = num(formData, "id");
   if (!id) return;
-  const { normalizeTrackingNumber, isTrackingNumber } = await import("./delivery/russian-post");
+  const order = await db.query.orders.findFirst({ where: eq(orders.id, id) });
+  const { normalizeOrderTrackingNumber } = await import("./delivery/tracking");
   const raw = str(formData, "trackingNumber");
   if (!raw) {
     await db.update(orders).set({ trackingNumber: null, updatedAt: new Date() }).where(eq(orders.id, id));
   } else {
-    if (!isTrackingNumber(raw)) {
-      throw new Error("Трек-номер Почты России — 14 цифр (или международный формат S10, например RA123456789RU)");
-    }
+    // Формат номера зависит от службы: у СДЭК — 10 цифр с накладной, у Почты — 14 цифр чека.
+    const checked = normalizeOrderTrackingNumber(order?.deliveryMethod ?? "", raw);
+    if (!checked.ok) throw new Error(checked.error);
     await db
       .update(orders)
-      .set({ trackingNumber: normalizeTrackingNumber(raw), updatedAt: new Date() })
+      .set({ trackingNumber: checked.number, updatedAt: new Date() })
       .where(eq(orders.id, id));
   }
   revalidatePath("/admin");
@@ -383,6 +384,48 @@ export async function testRussianPostAction(postcode: string): Promise<{ ok: boo
         `Индекс ${config.fromIndex} → ${index}, 500 г: ${formatPrice(quote.cost)}${days}. Источник: ${source}. ` +
         otpravka +
         addressCheck,
+    };
+  } catch (e) {
+    return { ok: false, message: `Ошибка расчёта: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+export async function testCdekAction(city: string): Promise<{ ok: boolean; message: string }> {
+  await requireAdmin();
+  const { getCdekConfig, getCdekQuote, isCdekConfigured, isCdekTestMode, resolveCityCode } = await import(
+    "./delivery/cdek"
+  );
+  const { formatPrice } = await import("./utils");
+  const config = getCdekConfig();
+  const target = city.trim();
+  if (target.length < 2) {
+    return { ok: false, message: "Укажите город получателя (например, Москва)." };
+  }
+  if (!isCdekConfigured()) {
+    return {
+      ok: false,
+      message:
+        "CDEK_ACCOUNT и CDEK_SECRET не заданы — договор с СДЭК не подключён, покупатели видят стандартный тариф 300 ₽. " +
+        "Добавьте ключи из ЛК СДЭК (Настройки → API) в переменные окружения и сделайте редеплой.",
+    };
+  }
+  try {
+    const cityCode = await resolveCityCode(target, config);
+    const quote = await getCdekQuote({ city: target, weightGrams: 500, declaredValueRub: 1000 });
+    const days =
+      quote.minDays !== undefined || quote.maxDays !== undefined
+        ? `, срок ${quote.minDays ?? "?"}–${quote.maxDays ?? "?"} раб. дн.`
+        : "";
+    const source = quote.fallback
+      ? `стандартный тариф (${quote.reason === "weight-limit" ? "превышен предел веса" : quote.reason === "not-configured" ? "нет договора" : "API недоступно"})`
+      : `API СДЭК v2, тариф ${quote.tariffCode}`;
+    return {
+      ok: !quote.fallback,
+      message:
+        `${config.fromCity} → ${target}${cityCode ? ` (код города ${cityCode})` : " (код города не найден)"}, 500 г: ` +
+        `${formatPrice(quote.cost)}${days}. Источник: ${source}. Контур: ${
+          isCdekTestMode() ? "тестовый (CDEK_API_URL)" : "боевой api.cdek.ru"
+        }.`,
     };
   } catch (e) {
     return { ok: false, message: `Ошибка расчёта: ${e instanceof Error ? e.message : String(e)}` };
