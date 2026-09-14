@@ -27,9 +27,13 @@ const WIDGET_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/@cdek-it/widget@${CDEK_W
 export type CdekWidgetFrom = {
   country_code: string;
   city: string;
-  postal_code?: string;
-  code?: number;
+  postal_code?: string | null;
+  code?: number | null;
+  address?: string | null;
 };
+
+/** Почему карта недоступна: нет ключа в сборке / не грузится CDN / упал конструктор. */
+export type CdekWidgetFailReason = "no-key" | "cdn" | "init";
 
 export type CdekWidgetTariff = {
   tariff_code: number;
@@ -129,18 +133,28 @@ export function loadCdekWidget(): Promise<CdekWidgetConstructor> {
         if (window.CDEKWidget) resolve(window.CDEKWidget);
         else {
           scriptPromise = null;
-          reject(new Error("Виджет СДЭК загрузился, но не инициализировался"));
+          reject(cdnError("Виджет СДЭК загрузился, но не инициализировался"));
         }
       };
       script.onerror = () => {
         scriptPromise = null;
         script.remove();
-        reject(new Error("Не удалось загрузить виджет СДЭК с CDN"));
+        reject(cdnError("Не удалось загрузить виджет СДЭК с CDN"));
       };
       document.head.appendChild(script);
     });
   }
   return scriptPromise;
+}
+
+function cdnError(message: string) {
+  return Object.assign(new Error(message), { code: "cdn" });
+}
+
+function isCdnError(error: unknown) {
+  return (
+    error instanceof Error && (error as { code?: unknown }).code === "cdn"
+  );
 }
 
 /* ---------------- Конфиг виджета с сервера ---------------- */
@@ -171,9 +185,10 @@ function baseOptions(config: CdekWidgetConfig, yandexKey: string) {
     servicePath: config.servicePath,
     // Оплата только онлайн и только предоплата — фильтры «оплата в ПВЗ» прячем,
     // примерочную и тип точки оставляем на усмотрение покупателя.
-    hideFilters: { have_cash: true, have_cashless: true },
+    // Объекты полные (как в wiki) — частичные может не принять валидация.
+    hideFilters: { have_cash: true, have_cashless: true, is_dressing_room: false, type: false },
     // Способ доставки у нас только «до пункта выдачи» — курьера прячем.
-    hideDeliveryOptions: { door: true },
+    hideDeliveryOptions: { door: true, office: false },
     tariffs: config.tariffs,
     lang: "rus",
     currency: "RUB",
@@ -198,8 +213,12 @@ export function CdekPvzPicker({
   weightGrams: number;
   selected: CdekPvzChoice | null;
   onChoose: (choice: CdekPvzChoice) => void;
-  /** Скрипт или виджет не завелись — родитель откатывается на ручной ввод. */
-  onWidgetError: () => void;
+  /**
+   * Скрипт или виджет не завелись — родитель откатывается на ручной ввод.
+   * Причина (для понятной подсказки): no-key — ключа нет в сборке (нужен
+   * редеплой), cdn — не загрузился скрипт, init — упал конструктор/карта.
+   */
+  onWidgetError: (reason: CdekWidgetFailReason) => void;
 }) {
   const rootId = `cdek-map-${useId().replace(/:/g, "")}`;
   const instanceRef = useRef<CdekWidgetInstance | null>(null);
@@ -239,17 +258,22 @@ export function CdekPvzPicker({
     }
   }, [weightGrams]);
 
-  const fail = () => {
+  const fail = (reason: CdekWidgetFailReason, detail: unknown) => {
+    console.error(
+      "[cdek-widget] карта недоступна:",
+      reason,
+      detail instanceof Error ? detail.message : detail
+    );
     if (failedRef.current) return;
     failedRef.current = true;
     setOpening(false);
-    callbacksRef.current.onWidgetError();
+    callbacksRef.current.onWidgetError(reason);
   };
 
   const open = async () => {
     const yandexKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY?.trim() ?? "";
     if (!yandexKey) {
-      fail();
+      fail("no-key", "NEXT_PUBLIC_YANDEX_MAPS_API_KEY пуст в сборке — нужен редеплой");
       return;
     }
     // Инстанс уже есть — двигаем карту к актуальному городу и открываем.
@@ -257,8 +281,8 @@ export function CdekPvzPicker({
       try {
         if (city.trim()) instanceRef.current.updateLocation(city.trim());
         instanceRef.current.open();
-      } catch {
-        fail();
+      } catch (error) {
+        fail("init", error);
       }
       return;
     }
@@ -311,8 +335,8 @@ export function CdekPvzPicker({
       failedRef.current = false;
       setOpening(false);
       instance.open();
-    } catch {
-      fail();
+    } catch (error) {
+      fail(isCdnError(error) ? "cdn" : "init", error);
     }
   };
 
