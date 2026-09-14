@@ -3,47 +3,45 @@ import { db } from "@/db";
 import { products } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
-import {
-  estimateParcelWeightGrams,
-  getRussianPostQuote,
-  isValidPostcode,
-  normalizePostcode,
-} from "@/lib/delivery/russian-post";
 import { clientIp, isRateLimited } from "@/lib/delivery/rate-limit";
+import { getCdekQuote, isCdekConfigured } from "@/lib/delivery/cdek";
+import { estimateParcelWeightGrams } from "@/lib/delivery/weight";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/delivery/russian-post/calculate
+ * POST /api/delivery/cdek/calculate
  *
  * Тело — один из вариантов:
- *   { postcode, items: [{ productId, quantity }] } — чекаут (вес и сумма из БД)
- *   { postcode, weightGrams, subtotal? }            — виджет на странице доставки
+ *   { city, items: [{ productId, quantity }] } — чекаут (вес и сумма из БД)
+ *   { city, weightGrams, subtotal? }           — виджет на странице доставки
  *
- * Ответ: { ok: true, postcode, cost, mailCost, free, minDays?, maxDays?,
- *          source, fallback, weightGrams }
- * cost — итог с учётом бесплатного порога, mailCost — сырой тариф Почты.
+ * Ответ: { ok: true, city, cityCode?, cost, carrierCost, free, minDays?,
+ *          maxDays?, source, fallback, reason?, weightGrams, configured }
+ * cost — итог с учётом бесплатного порога, carrierCost — сырой тариф СДЭК.
+ *
+ * Если договор с СДЭК не настроен или API недоступен, ответ всё равно ok:
+ * тариф заменяется стандартным (300 ₽), оформление заказа не блокируется.
  */
 
-// Простой per-instance лимитер, чтобы через нас не долбили API Почты.
 const RATE_LIMIT = 60;
 
 export async function POST(req: Request) {
   try {
-    if (isRateLimited("russian-post", clientIp(req), RATE_LIMIT)) {
+    if (isRateLimited("cdek", clientIp(req), RATE_LIMIT)) {
       return NextResponse.json({ ok: false, error: "Слишком много запросов. Подождите минуту." }, { status: 429 });
     }
 
     const body = (await req.json().catch(() => ({}))) as {
-      postcode?: unknown;
+      city?: unknown;
       items?: unknown;
       weightGrams?: unknown;
       subtotal?: unknown;
     };
 
-    const postcode = normalizePostcode(String(body.postcode ?? ""));
-    if (!isValidPostcode(postcode)) {
-      return NextResponse.json({ ok: false, error: "Укажите корректный индекс (6 цифр)" }, { status: 400 });
+    const city = String(body.city ?? "").trim().slice(0, 120);
+    if (city.length < 2) {
+      return NextResponse.json({ ok: false, error: "Укажите город получателя" }, { status: 400 });
     }
 
     let weightGrams: number;
@@ -73,7 +71,7 @@ export async function POST(req: Request) {
       if (lines.length === 0) {
         return NextResponse.json({ ok: false, error: "Товары больше не доступны" }, { status: 400 });
       }
-      weightGrams = estimateParcelWeightGrams(lines);
+      weightGrams = estimateParcelWeightGrams(lines, { defaultItemWeightG: 150, packagingWeightG: 150, minWeightGrams: 100 });
     } else {
       weightGrams = Math.round(Number(body.weightGrams));
       if (!Number.isFinite(weightGrams) || weightGrams < 100 || weightGrams > 31_500) {
@@ -86,25 +84,29 @@ export async function POST(req: Request) {
       subtotal = Number.isFinite(rawSubtotal) && rawSubtotal > 0 ? rawSubtotal : 0;
     }
 
-    const quote = await getRussianPostQuote({ postcode, weightGrams, declaredValueRub: subtotal });
+    const quote = await getCdekQuote({ city, weightGrams, declaredValueRub: subtotal });
     const free = subtotal >= FREE_DELIVERY_THRESHOLD;
 
     return NextResponse.json({
       ok: true,
-      postcode,
+      city,
       cost: free ? 0 : quote.cost,
-      mailCost: quote.cost,
+      carrierCost: quote.cost,
       free,
+      ...(quote.cityCode !== undefined ? { cityCode: quote.cityCode } : {}),
+      ...(quote.tariffCode !== undefined ? { tariffCode: quote.tariffCode } : {}),
       ...(quote.minDays !== undefined ? { minDays: quote.minDays } : {}),
       ...(quote.maxDays !== undefined ? { maxDays: quote.maxDays } : {}),
+      ...(quote.reason !== undefined ? { reason: quote.reason } : {}),
       source: quote.source,
       fallback: quote.fallback,
       weightGrams: quote.weightGrams,
+      configured: isCdekConfigured(),
     });
   } catch (e) {
-    console.error("[pochta] calculate failed", e);
-    const message = e instanceof Error ? e.message : "Не удалось рассчитать тариф";
-    const status = message.includes("индекс") ? 400 : 500;
+    console.error("[cdek] calculate failed", e);
+    const message = e instanceof Error ? e.message : "Не удалось рассчитать тариф СДЭК";
+    const status = message.includes("город") ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

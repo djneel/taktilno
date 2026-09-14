@@ -6,6 +6,7 @@ import {
   FREE_DELIVERY_THRESHOLD,
   getDeliveryCost,
   getDeliveryMethod,
+  isCdek,
   isRussianPost,
   ONLINE_PAYMENT_METHOD,
   PICKUP_ADDRESS,
@@ -20,6 +21,7 @@ import {
   isValidPostcode,
   normalizePostcode,
 } from "./delivery/russian-post";
+import { getCdekQuote } from "./delivery/cdek";
 
 export type CheckoutInput = {
   name: string;
@@ -128,21 +130,32 @@ export async function createOrder(input: CheckoutInput) {
   }
 
   const subtotal = lines.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
-  // Итог всегда рассчитывается на сервере. Почта России (гибрид): бесплатно
-  // от порога, ниже порога — живой тариф из API Почты по индексу получателя
-  // (с graceful fallback на 300 ₽, если API недоступны). Остальные службы —
-  // 300 ₽ ниже порога, бесплатно от порога; самовывоз бесплатен всегда.
+  // Итог всегда рассчитывается на сервере. Почта России и СДЭК (гибрид): бесплатно
+  // от порога, ниже порога — живой тариф службы (Почта — по индексу получателя,
+  // СДЭК — по городу) с graceful fallback на 300 ₽, если API недоступны или
+  // договора нет. Остальные службы — 300 ₽ ниже порога, бесплатно от порога;
+  // самовывоз бесплатен всегда.
   let deliveryCost: number;
-  if (isRussianPost(delivery.id) && subtotal < FREE_DELIVERY_THRESHOLD) {
+  if (subtotal < FREE_DELIVERY_THRESHOLD && (isRussianPost(delivery.id) || isCdek(delivery.id))) {
     const weightGrams = estimateParcelWeightGrams(
       lines.map((line) => ({ weightGrams: line.product.weightGrams ?? null, quantity: line.quantity }))
     );
-    const quote = await getRussianPostQuote({
-      postcode: submittedPostcode,
-      weightGrams,
-      declaredValueRub: subtotal,
-    });
-    deliveryCost = getDeliveryCost(delivery.id, subtotal, { russianPostCost: quote.cost });
+    if (isRussianPost(delivery.id)) {
+      const quote = await getRussianPostQuote({
+        postcode: submittedPostcode,
+        weightGrams,
+        declaredValueRub: subtotal,
+      });
+      deliveryCost = getDeliveryCost(delivery.id, subtotal, { russianPostCost: quote.cost });
+    } else {
+      const quote = await getCdekQuote({
+        city: submittedCity,
+        address: submittedAddress,
+        weightGrams,
+        declaredValueRub: subtotal,
+      });
+      deliveryCost = getDeliveryCost(delivery.id, subtotal, { cdekCost: quote.cost });
+    }
   } else {
     deliveryCost = getDeliveryCost(delivery.id, subtotal);
   }

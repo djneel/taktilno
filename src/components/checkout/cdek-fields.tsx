@@ -4,28 +4,38 @@ import { useEffect, useMemo, useState } from "react";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/constants";
 import { formatDeliveryDays, formatPrice } from "@/lib/utils";
 
-export type RussianPostQuoteDto = {
+export type CdekQuoteDto = {
   cost: number;
-  mailCost: number;
+  carrierCost: number;
   free: boolean;
+  cityCode?: number;
+  tariffCode?: number;
   minDays?: number;
   maxDays?: number;
-  source: "otpravka" | "tariff" | "fallback";
+  source: "api" | "fallback";
   fallback: boolean;
+  reason?: "not-configured" | "weight-limit" | "api-error";
   weightGrams: number;
+  configured: boolean;
 };
 
 type QuoteItem = { productId: number; quantity: number };
 
-/** Живой тариф Почты России с дебаунсом. Не блокирует оформление при ошибках. */
-export function useRussianPostQuote(opts: {
+/** Стандартный тариф, который показываем, когда API СДЭК недоступно. */
+const STANDARD_DELIVERY_COST = 300;
+
+/**
+ * Живой тариф СДЭК по городу получателя с дебаунсом.
+ * Ошибки не блокируют оформление: сервер посчитает сам и применит стандартный тариф.
+ */
+export function useCdekQuote(opts: {
   enabled: boolean;
-  postcode: string;
+  city: string;
   items: QuoteItem[];
   subtotal: number;
 }) {
-  const { enabled, postcode, items, subtotal } = opts;
-  const [data, setData] = useState<{ key: string | null; quote: RussianPostQuoteDto | null; error: string | null }>({
+  const { enabled, city, items, subtotal } = opts;
+  const [data, setData] = useState<{ key: string | null; quote: CdekQuoteDto | null; error: string | null }>({
     key: null,
     quote: null,
     error: null,
@@ -39,7 +49,8 @@ export function useRussianPostQuote(opts: {
         .join(","),
     [items]
   );
-  const postcodeValid = /^\d{6}$/.test(postcode.replace(/\D/g, ""));
+  const cityValue = city.trim();
+  const cityValid = cityValue.length >= 2;
   // Снапшот корзины восстанавливаем из стабильной строки-ключа (без чтения ref во время рендера).
   const snapshot = useMemo(
     () =>
@@ -53,9 +64,9 @@ export function useRussianPostQuote(opts: {
     [itemsKey]
   );
 
-  // Ключ активного запроса; null — считать нечего (способ не Почта, индекс неполный, корзина пуста).
+  // Ключ активного запроса; null — считать нечего (способ не СДЭК, город не введён, корзина пуста).
   const requestKey =
-    enabled && postcodeValid && items.length > 0 ? `${postcode}|${itemsKey}|${subtotal}` : null;
+    enabled && cityValid && items.length > 0 ? `${cityValue}|${itemsKey}|${subtotal}` : null;
 
   // Сброс результата при смене запроса — adjustment во время рендера (без setState в эффекте).
   if (data.key !== requestKey) {
@@ -67,18 +78,17 @@ export function useRussianPostQuote(opts: {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch("/api/delivery/russian-post/calculate", {
+        const response = await fetch("/api/delivery/cdek/calculate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ postcode, items: snapshot }),
+          body: JSON.stringify({ city: cityValue, items: snapshot }),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || "Не удалось рассчитать тариф");
+          throw new Error(payload.error || "Не удалось рассчитать тариф СДЭК");
         }
-        if (!cancelled) setData({ key: requestKey, quote: payload as RussianPostQuoteDto, error: null });
+        if (!cancelled) setData({ key: requestKey, quote: payload as CdekQuoteDto, error: null });
       } catch (caught) {
-        // Не мешаем оформить заказ: сервер посчитает сам и применит fallback.
         if (!cancelled) {
           setData({
             key: requestKey,
@@ -92,36 +102,47 @@ export function useRussianPostQuote(opts: {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestKey, postcode, snapshot]);
+  }, [requestKey, cityValue, snapshot]);
 
   const loading = requestKey !== null && data.key === requestKey && !data.quote && !data.error;
-  return { quote: data.key === requestKey ? data.quote : null, loading, error: data.error, postcodeValid };
+  return { quote: data.key === requestKey ? data.quote : null, loading, error: data.error, cityValid };
 }
 
-/** Плашка с результатом расчёта тарифа Почты России. */
-export function RussianPostQuoteInfo({
+/** Плашка с результатом расчёта тарифа СДЭК. */
+export function CdekQuoteInfo({
   quote,
   loading,
   error,
   subtotal,
+  city,
 }: {
-  quote: RussianPostQuoteDto | null;
+  quote: CdekQuoteDto | null;
   loading: boolean;
   error: string | null;
   subtotal: number;
+  city: string;
 }) {
+  const hasCity = city.trim().length >= 2;
+
+  if (!hasCity && !quote) {
+    return (
+      <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
+        Укажите город — посчитаем тариф СДЭК до пункта выдачи.
+      </div>
+    );
+  }
   if (loading && !quote) {
     return (
       <div className="animate-pulse rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-        Считаем тариф Почты России…
+        Считаем тариф СДЭК…
       </div>
     );
   }
   if (error && !quote) {
     return (
       <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-        Точный тариф Почты сейчас недоступен — итог посчитаем при оформлении
-        (ориентир — {formatPrice(300)}).
+        Точный тариф СДЭК сейчас недоступен — итог посчитаем при оформлении
+        (ориентир — {formatPrice(STANDARD_DELIVERY_COST)}).
       </div>
     );
   }
@@ -140,16 +161,23 @@ export function RussianPostQuoteInfo({
         {freeByThreshold ? (
           <>Бесплатно — заказ от {formatPrice(FREE_DELIVERY_THRESHOLD)}</>
         ) : (
-          <>Почта России: {formatPrice(quote.mailCost)}</>
+          <>СДЭК: {formatPrice(quote.carrierCost)}</>
         )}
       </span>
       {days && <span className="text-muted"> · срок {days}</span>}
       {!freeByThreshold && !quote.fallback && (
-        <span className="text-muted"> · тариф по вашему индексу</span>
+        <span className="text-muted"> · тариф СДЭК по вашему городу</span>
       )}
       {quote.fallback && !freeByThreshold && (
-        <span className="text-muted"> · сайт Почты недоступен, взят стандартный тариф</span>
+        <span className="text-muted">
+          {quote.reason === "not-configured"
+            ? " · тариф СДЭК уточним при оформлении, ориентир — стандартный"
+            : " · сайт СДЭК недоступен, взят стандартный тариф"}
+        </span>
       )}
+      <span className="mt-1 block text-xs text-muted">
+        Доставка в пункт выдачи СДЭК. Отслеживание — по трек-номеру после отправки.
+      </span>
     </div>
   );
 }

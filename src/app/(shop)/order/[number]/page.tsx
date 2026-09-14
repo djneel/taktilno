@@ -5,8 +5,14 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils";
-import { getDeliveryMethodName, isFreeDelivery, isRussianPost, PAYMENT_STATUS_LABELS } from "@/lib/constants";
-import { getRussianPostTrackingUrl } from "@/lib/delivery/russian-post";
+import {
+  getDeliveryMethodName,
+  isCdek,
+  isFreeDelivery,
+  isRussianPost,
+  PAYMENT_STATUS_LABELS,
+} from "@/lib/constants";
+import { getTrackingLink } from "@/lib/delivery/tracking";
 
 export const metadata: Metadata = { title: "Заказ принят", robots: { index: false } };
 
@@ -19,6 +25,7 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
   if (!order) notFound();
   const delivery = getDeliveryMethodName(order.deliveryMethod);
   const deliveryIsFree = isFreeDelivery(order.deliveryMethod, order.subtotal);
+  const tracking = order.trackingNumber ? getTrackingLink(order.deliveryMethod, order.trackingNumber) : null;
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-12 text-center sm:px-6 md:pt-20">
@@ -58,21 +65,30 @@ export default async function OrderSuccessPage({ params }: { params: Promise<{ n
               <span>{formatPrice(order.total)}</span>
             </div>
           </div>
-          {order.trackingNumber && (
+          {tracking ? (
             <a
-              href={getRussianPostTrackingUrl(order.trackingNumber)}
+              href={tracking.url}
               target="_blank"
               rel="noreferrer"
               className="mt-5 block rounded-2xl bg-green/10 p-4 text-center ring-1 ring-green/30"
             >
-              <span className="block text-xs font-bold uppercase tracking-wider text-green">Отслеживание Почты России</span>
+              <span className="block text-xs font-bold uppercase tracking-wider text-green">{tracking.label}</span>
               <span className="mt-1 block font-bold">{order.trackingNumber} ↗</span>
             </a>
+          ) : (
+            order.trackingNumber && (
+              <div className="mt-5 rounded-2xl bg-green/10 p-4 text-center ring-1 ring-green/30">
+                <span className="block text-xs font-bold uppercase tracking-wider text-green">Трек-номер</span>
+                <span className="mt-1 block font-bold">{order.trackingNumber}</span>
+              </div>
+            )
           )}
-          {isRussianPost(order.deliveryMethod) && !order.trackingNumber && (
+          {(isRussianPost(order.deliveryMethod) || isCdek(order.deliveryMethod)) && !order.trackingNumber && (
             <p className="mt-5 rounded-2xl bg-bg2/60 p-3 text-xs leading-relaxed text-muted ring-1 ring-line/60">
-              Отправим посылку в течение 1–3 дней после оплаты{order.postcode ? ` на индекс ${order.postcode}` : ""}.
-              Трек-номер для отслеживания появится на этой странице.
+              {isCdek(order.deliveryMethod)
+                ? `Отправим заказ в пункт выдачи СДЭК в ${order.city} в течение 1–3 дней после оплаты.`
+                : `Отправим посылку в течение 1–3 дней после оплаты${order.postcode ? ` на индекс ${order.postcode}` : ""}.`}
+              {" "}Трек-номер для отслеживания появится на этой странице.
             </p>
           )}
           {order.paymentStatus === "pending" && order.paymentUrl && (

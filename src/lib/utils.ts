@@ -43,5 +43,14 @@ export function pluralize(n: number, forms: [string, string, string]) {
   return forms[2];
 }
 
+/** «2–4 дня» / «3 дня» / null, если сроки неизвестны. */
+export function formatDeliveryDays(minDays?: number, maxDays?: number) {
+  if (minDays === undefined && maxDays === undefined) return null;
+  const min = minDays ?? maxDays!;
+  const max = maxDays ?? minDays!;
+  if (min === max) return `${min} ${pluralize(min, ["день", "дня", "дней"])}`;
+  return `${min}–${max} ${pluralize(max, ["день", "дня", "дней"])}`;
+}
+
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 export const SITE_NAME = "ТАКТИЛЬНО";

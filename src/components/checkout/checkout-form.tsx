@@ -9,6 +9,7 @@ import {
   FIXED_DELIVERY_COST,
   FREE_DELIVERY_THRESHOLD,
   getDeliveryCost,
+  isCdek,
   isRussianPost,
   ONLINE_PAYMENT_METHOD,
   PICKUP_ADDRESS,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/constants";
 import { normalizeInn, validateInn } from "@/lib/inn";
 import { cn, formatPrice } from "@/lib/utils";
+import { CdekQuoteInfo, useCdekQuote } from "./cdek-fields";
 import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
@@ -36,16 +38,26 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
 
   const delivery = DELIVERY_METHODS.find((method) => method.id === form.deliveryMethod) ?? DELIVERY_METHODS[0];
   const russianPost = isRussianPost(delivery.id);
+  const cdek = isCdek(delivery.id);
+  const cartItems = items.map((item) => ({ productId: item.productId, quantity: item.quantity }));
   const { quote: pochtaQuote, loading: pochtaLoading, error: pochtaError } = useRussianPostQuote({
     enabled: russianPost,
     postcode: form.postcode,
-    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    items: cartItems,
     subtotal,
   });
-  // Почта России: живой тариф из API (сервер пересчитает авторитетно при оформлении).
-  const deliveryCost = russianPost
-    ? getDeliveryCost(delivery.id, subtotal, { russianPostCost: pochtaQuote?.mailCost })
-    : getDeliveryCost(delivery.id, subtotal);
+  const { quote: cdekQuote, loading: cdekLoading, error: cdekError } = useCdekQuote({
+    enabled: cdek,
+    city: form.city,
+    items: cartItems,
+    subtotal,
+  });
+  // Почта России и СДЭК: живой тариф из API (сервер пересчитает авторитетно при оформлении).
+  const liveCosts = {
+    russianPostCost: pochtaQuote?.mailCost,
+    cdekCost: cdekQuote?.carrierCost,
+  };
+  const deliveryCost = getDeliveryCost(delivery.id, subtotal, liveCosts);
   const deliveryIsFree = deliveryCost === 0;
   const total = subtotal + deliveryCost;
 
@@ -142,23 +154,25 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
 
         <Fieldset title="Получение заказа">
           <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
-            Доставка СДЭК, Ozon или Яндексом — <strong className="text-fg">{formatPrice(FIXED_DELIVERY_COST)}</strong>,
-            Почтой России — по тарифу Почты для вашего индекса.
+            СДЭК — <strong className="text-fg">по тарифу СДЭК</strong> для вашего города,
+            Почта России — по тарифу Почты для вашего индекса,
+            Ozon и Яндекс — {formatPrice(FIXED_DELIVERY_COST)}.
             От {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно. Самовывоз бесплатный при любой сумме.
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
             {DELIVERY_METHODS.map((method) => {
               const isPost = isRussianPost(method.id);
-              const methodCost = isPost
-                ? getDeliveryCost(method.id, subtotal, { russianPostCost: pochtaQuote?.mailCost })
-                : getDeliveryCost(method.id, subtotal);
+              const isCdekMethod = isCdek(method.id);
+              const methodCost = getDeliveryCost(method.id, subtotal, liveCosts);
               const methodIsFree = methodCost === 0;
               const methodPrice = methodIsFree
                 ? "Бесплатно"
                 : isPost
                   ? (pochtaQuote ? formatPrice(pochtaQuote.mailCost) : pochtaLoading ? "…" : "по тарифу")
-                  : formatPrice(method.cost);
+                  : isCdekMethod
+                    ? (cdekQuote && !cdekQuote.fallback ? formatPrice(cdekQuote.carrierCost) : cdekLoading ? "…" : "по тарифу")
+                    : formatPrice(method.cost);
               return (
                 <label
                   key={method.id}
@@ -219,6 +233,15 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                 </>
               )}
               <Input label="Город" required value={form.city} onChange={set("city")} autoComplete="address-level2" />
+              {cdek && (
+                <CdekQuoteInfo
+                  quote={cdekQuote}
+                  loading={cdekLoading}
+                  error={cdekError}
+                  subtotal={subtotal}
+                  city={form.city}
+                />
+              )}
               <Input
                 label={delivery.addressLabel}
                 required
