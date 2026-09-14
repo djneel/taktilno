@@ -109,7 +109,7 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     needsCity: true,
     needsAddress: true,
     needsPostcode: true,
-    addressLabel: "Улица, дом, квартира и отделение Почты России",
+    addressLabel: "Улица, дом, квартира получателя",
   },
   {
     id: "pickup",
