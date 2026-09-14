@@ -527,3 +527,131 @@ export async function normalizeAddressViaOtpravka(
     return null;
   }
 }
+
+/* ---------------- Отделение по индексу (DaData) ---------------- */
+
+const DADATA_URL = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/postal_unit";
+
+/** Почтовое отделение из справочника DaData (источник данных — Почта России). */
+export type RussianPostOffice = {
+  /** Индекс отделения. */
+  postcode: string;
+  /** Адрес отделения одной строкой. */
+  address: string;
+  /** true — отделение временно закрыто. */
+  isClosed: boolean;
+  /** Часы работы одной строкой («Ежедневно 09:00–20:00») или null. */
+  workTime: string | null;
+};
+
+export type RussianPostOfficeResult =
+  | { ok: true; office: RussianPostOffice | null }
+  | { ok: false; office: null; detail: string };
+
+// Индексы не меняются, реестр отделений стабилен — кэшируем на неделю.
+const officeCache = new Map<string, { expiresAt: number; office: RussianPostOffice | null }>();
+const OFFICE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Отделение Почты России по индексу (DaData, бесплатно до 10 тыс. запросов/день).
+ * Нужен DADATA_API_KEY (dadata.ru → регистрация → API-ключ). Без ключа
+ * возвращает ok:false — карточка отделения просто не показывается.
+ * Не бросает исключений.
+ */
+export async function getPostOfficeByIndex(rawIndex: string): Promise<RussianPostOfficeResult> {
+  const postcode = rawIndex.replace(/\D/g, "").slice(0, 6);
+  if (postcode.length !== 6) return { ok: false, office: null, detail: "Нужен 6-значный индекс" };
+  const apiKey = process.env.DADATA_API_KEY?.trim() ?? "";
+  if (!apiKey) return { ok: false, office: null, detail: "DADATA_API_KEY не задан" };
+  const cached = officeCache.get(postcode);
+  if (cached && cached.expiresAt > Date.now()) return { ok: true, office: cached.office };
+  try {
+    const data = (await fetchJson(DADATA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Token ${apiKey}`,
+      },
+      body: JSON.stringify({ query: postcode }),
+    })) as { suggestions?: unknown };
+    const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+    const office = normalizePostOffice(suggestions[0], postcode);
+    if (officeCache.size >= CACHE_MAX_ENTRIES) {
+      const oldest = officeCache.keys().next();
+      if (!oldest.done) officeCache.delete(oldest.value);
+    }
+    officeCache.set(postcode, { office, expiresAt: Date.now() + OFFICE_CACHE_TTL_MS });
+    return { ok: true, office };
+  } catch (error) {
+    console.error("[pochta] post office lookup failed:", shortError(error));
+    return { ok: false, office: null, detail: shortError(error) };
+  }
+}
+
+/** Сырая подсказка DaData → отделение. */
+function normalizePostOffice(item: unknown, postcode: string): RussianPostOffice | null {
+  if (!item || typeof item !== "object") return null;
+  const raw = item as Record<string, unknown>;
+  const data = (raw.data ?? {}) as Record<string, unknown>;
+  const address = String(raw.unrestricted_value ?? data.address_str ?? raw.value ?? "").trim();
+  if (!address) return null;
+  const code = String(data.postal_code ?? postcode).replace(/\D/g, "").slice(0, 6);
+  return {
+    postcode: code || postcode,
+    address: address.slice(0, 300),
+    isClosed: data.is_closed === true,
+    workTime: formatOfficeHours(data),
+  };
+}
+
+const WEEK_DAYS: [key: string, label: string][] = [
+  ["schedule_mon", "Пн"],
+  ["schedule_tue", "Вт"],
+  ["schedule_wed", "Ср"],
+  ["schedule_thu", "Чт"],
+  ["schedule_fri", "Пт"],
+  ["schedule_sat", "Сб"],
+  ["schedule_sun", "Вс"],
+];
+
+/** Расписание по дням → «Ежедневно 09:00–20:00» или «Пн–Пт 09:00–20:00, Сб 10:00–15:00». */
+function formatOfficeHours(data: Record<string, unknown>): string | null {
+  const days = WEEK_DAYS.map(([key, label], index) => ({ index, label, hours: formatDayHours(data[key]) }));
+  const open = days.filter((day): day is { index: number; label: string; hours: string } => day.hours !== null);
+  if (open.length === 0) return null;
+  if (open.length === 7 && open.every((day) => day.hours === open[0].hours)) return `Ежедневно ${open[0].hours}`;
+  // Склеиваем подряд идущие дни с одинаковыми часами в диапазоны.
+  const parts: string[] = [];
+  let start = open[0];
+  let prev = open[0];
+  const flush = () => {
+    parts.push(start === prev ? `${start.label} ${start.hours}` : `${start.label}–${prev.label} ${start.hours}`);
+  };
+  for (const day of open.slice(1)) {
+    if (day.hours === prev.hours && day.index === prev.index + 1) {
+      prev = day;
+    } else {
+      flush();
+      start = day;
+      prev = day;
+    }
+  }
+  flush();
+  return parts.join(", ").slice(0, 160);
+}
+
+/** Один день расписания DaData → «09:00–20:00» (строка или {opens, closes}). */
+function formatDayHours(value: unknown): string | null {
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? text.slice(0, 30) : null;
+  }
+  if (value && typeof value === "object") {
+    const slot = value as Record<string, unknown>;
+    const opens = String(slot.opens ?? slot.open ?? "").trim();
+    const closes = String(slot.closes ?? slot.close ?? "").trim();
+    if (opens && closes) return `${opens}–${closes}`;
+  }
+  return null;
+}
