@@ -10,7 +10,7 @@ import { PochtaTestButton } from "@/components/admin/pochta-test-button";
 import { CdekTestButton } from "@/components/admin/cdek-test-button";
 import { CdekDiagnosticsButton } from "@/components/admin/cdek-diagnostics-button";
 import { getRussianPostConfig, isOtpravkaConfigured } from "@/lib/delivery/russian-post";
-import { getCdekConfig, isCdekConfigured, isCdekTestMode } from "@/lib/delivery/cdek";
+import { cdekContourLabel, getCdekConfig, isCdekConfigured } from "@/lib/delivery/cdek";
 
 const STEPS = ["01 — Идея", "02 — 3D-модель", "03 — Печать", "04 — Сборка", "05 — ТАКТИЛЬНО"];
 
@@ -130,7 +130,7 @@ function CdekStatus() {
   const configured = isCdekConfigured();
   const rows: [string, string][] = [
     ["Договор с СДЭК", configured ? "подключён (живой тариф)" : "не настроен (стандартный тариф 300 ₽)"],
-    ["Контур API", isCdekTestMode() ? "тестовый (CDEK_API_URL)" : "боевой api.cdek.ru"],
+    ["Контур API", cdekContourLabel(config)],
     ["Город отправления", config.fromCityCode ? `${config.fromCity} (код ${config.fromCityCode})` : config.fromCity],
     ["Код тарифа", String(config.tariffCode)],
     ["Вес изделия / упаковки", `${config.defaultItemWeightG} г / ${config.packagingWeightG} г`],

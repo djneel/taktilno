@@ -53,6 +53,11 @@ export type CdekQuote = {
   fallback: boolean;
   /** Причина fallback — заполняется только когда fallback = true. */
   reason?: CdekFallbackReason;
+  /**
+   * Технические детали причины (например, сетевой код ECONNRESET) — только
+   * для админки и диагностики, покупателям не показываем.
+   */
+  reasonDetail?: string;
   /** Вес посылки в граммах, для которого посчитан тариф. */
   weightGrams: number;
   /** Код тарифа СДЭК, по которому посчитано (если удалось). */
@@ -112,6 +117,31 @@ class HttpError extends Error {
   }
 }
 
+/** На каком этапе соединение с API СДЭК не состоялось. */
+export type CdekNetworkStage = "config" | "dns" | "tcp" | "tls" | "timeout" | "unknown";
+
+/**
+ * Сетевая ошибка API СДЭК: запрос не дошёл до HTTP-ответа (DNS/TCP/TLS/таймаут).
+ * В отличие от голого «fetch failed», хранит код причины (ECONNRESET, ENOTFOUND…)
+ * и этап, на котором всё сломалось, — это показывает диагностика в админке.
+ */
+export class CdekNetworkError extends Error {
+  readonly code: string | null;
+  readonly stage: CdekNetworkStage;
+  readonly host: string;
+  constructor(
+    message: string,
+    opts: { code: string | null; stage: CdekNetworkStage; host: string; cause?: unknown }
+  ) {
+    super(message);
+    this.name = "CdekNetworkError";
+    this.code = opts.code;
+    this.stage = opts.stage;
+    this.host = opts.host;
+    if (opts.cause !== undefined) (this as { cause?: unknown }).cause = opts.cause;
+  }
+}
+
 function numEnv(name: string, def: number, min: number, max: number) {
   const raw = Number(process.env[name]);
   if (!Number.isFinite(raw)) return def;
@@ -148,6 +178,47 @@ export function isCdekConfigured() {
 /** Тестовый контур СДЭК (см. CDEK_API_URL). */
 export function isCdekTestMode() {
   return getCdekConfig().baseUrl !== DEFAULT_API_URL;
+}
+
+export type CdekBaseUrl = { ok: true; host: string; port: number } | { ok: false; problem: string };
+
+/**
+ * Разбирает CDEK_API_URL для диагностики: проверяет схему и хост.
+ * Ловит типичные ошибки — адрес без «https://» или с опечаткой.
+ */
+export function parseCdekBaseUrl(baseUrl: string): CdekBaseUrl {
+  const raw = (baseUrl ?? "").trim();
+  if (!raw) return { ok: false, problem: "CDEK_API_URL пуст." };
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    return {
+      ok: false,
+      problem: `«${raw}» — нет схемы: укажите полный адрес, например https://api.cdek.ru/v2 (тестовый контур: https://api.edu.cdek.ru/v2).`,
+    };
+  }
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return { ok: false, problem: `«${raw}» — схема должна быть https:// (сейчас ${url.protocol}).` };
+    }
+    if (!url.hostname) return { ok: false, problem: `«${raw}» — не указан хост.` };
+    return {
+      ok: true,
+      host: url.hostname,
+      port: url.port ? Number(url.port) : url.protocol === "http:" ? 80 : 443,
+    };
+  } catch {
+    return { ok: false, problem: `«${raw}» не похож на URL — проверьте опечатки.` };
+  }
+}
+
+/**
+ * Короткая подпись контура для админки — с реальным хостом, а не «по умолчанию»:
+ * «боевой (api.cdek.ru)» / «тестовый (api.edu.cdek.ru)».
+ */
+export function cdekContourLabel(config = getCdekConfig()): string {
+  const parsed = parseCdekBaseUrl(config.baseUrl);
+  const host = parsed.ok ? parsed.host : "?";
+  return config.baseUrl !== DEFAULT_API_URL ? `тестовый (${host})` : `боевой (${host})`;
 }
 
 /* ---------------- Трек-номера ---------------- */
@@ -212,8 +283,8 @@ export async function getCdekQuote(opts: {
     putCache(quoteCache, cacheKey, quote, false);
     return quote;
   } catch (error) {
-    console.error("[cdek] tariff request failed, using fallback:", shortError(error));
-    const quote = fallbackQuote(weightGrams, "api-error");
+    console.error("[cdek] tariff request failed, using fallback:", formatCdekError(error));
+    const quote = fallbackQuote(weightGrams, "api-error", formatCdekError(error));
     putCache(quoteCache, cacheKey, quote, true);
     return quote;
   }
@@ -273,7 +344,7 @@ export async function resolveCityCode(city: string, config = getCdekConfig()): P
     const code = Number(first?.code);
     if (Number.isFinite(code) && code > 0) value = Math.round(code);
   } catch (error) {
-    console.error("[cdek] city lookup failed:", shortError(error));
+    console.error("[cdek] city lookup failed:", formatCdekError(error));
   }
 
   putCache(cityCodeCache, key, value, value === null);
@@ -375,13 +446,14 @@ function dayBounds(data: Record<string, unknown>) {
   };
 }
 
-function fallbackQuote(weightGrams: number, reason: CdekFallbackReason): CdekQuote {
+function fallbackQuote(weightGrams: number, reason: CdekFallbackReason, reasonDetail?: string): CdekQuote {
   return {
     cost: FIXED_DELIVERY_COST,
     source: "fallback",
     fallback: true,
     reason,
     weightGrams: Math.max(100, Math.round(weightGrams) || 100),
+    ...(reasonDetail ? { reasonDetail } : {}),
   };
 }
 
@@ -407,9 +479,103 @@ export function clearCdekCaches() {
   tokenCache = null;
 }
 
-function shortError(error: unknown) {
+/**
+ * Ищет сетевой код Node.js (ENOTFOUND, ECONNRESET, …) в цепочке error.cause.
+ * Node.js прячет детали упавшего fetch именно туда — без них все сетевые
+ * ошибки выглядят одинаково («fetch failed») и чинить их вслепую нельзя.
+ */
+export function findNetworkCode(error: unknown): string | null {
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && current instanceof Error && !seen.has(current); depth++) {
+    seen.add(current);
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && code) return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * Короткий текст ошибки для логов и админки: само сообщение + код причины.
+ * Экспортирована для модуля диагностики (cdek-diagnostics.ts).
+ */
+export function formatCdekError(error: unknown, maxLength = 300): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 300);
+  // CdekNetworkError уже содержит код в тексте — не дублируем.
+  const code = error instanceof CdekNetworkError ? null : findNetworkCode(error);
+  return (code ? `${message} (${code})` : message).slice(0, maxLength);
+}
+
+/**
+ * Превращает низкоуровневую ошибку fetch в CdekNetworkError с понятным текстом:
+ * какой хост, какой код, что это значит. Логические (CdekApiError) и HTTP-ошибки
+ * возвращает как есть.
+ */
+export function toNetworkError(error: unknown, url: string): Error {
+  if (error instanceof CdekNetworkError || error instanceof CdekApiError || error instanceof HttpError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const code = findNetworkCode(error);
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    host = "";
+  }
+  if (/bad port/i.test(message)) {
+    return new CdekNetworkError(
+      `Порт в адресе API СДЭК («${url || "?"}») запрещён для исходящих запросов — проверьте порт в CDEK_API_URL (обычно 443).`,
+      { code, stage: "config", host: host || "?", cause: error }
+    );
+  }
+  if (!host || message.includes("Failed to parse URL")) {
+    return new CdekNetworkError(
+      `Некорректный адрес API СДЭК («${url || "?"}»): нужен полный https-адрес — боевой https://api.cdek.ru/v2 или тестовый https://api.edu.cdek.ru/v2.`,
+      { code, stage: "config", host: host || "?", cause: error }
+    );
+  }
+  switch (code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return new CdekNetworkError(
+        `DNS не находит хост ${host} (${code}) — проверьте CDEK_API_URL на опечатки и DNS на сервере хостинга.`,
+        { code, stage: "dns", host, cause: error }
+      );
+    case "ECONNREFUSED":
+      return new CdekNetworkError(
+        `${host}: порт закрыт, сервер отклонил подключение (${code}).`,
+        { code, stage: "tcp", host, cause: error }
+      );
+    case "ECONNRESET":
+    case "EPIPE":
+    case "UND_ERR_SOCKET":
+      return new CdekNetworkError(
+        `${host} сбросил соединение (${code}) — обычно так режет anti-DDoS/фаервол на пути либо исходящие соединения блокирует хостинг.`,
+        { code, stage: "tls", host, cause: error }
+      );
+    case "ETIMEDOUT":
+    case "EHOSTUNREACH":
+    case "ENETUNREACH":
+    case "UND_ERR_CONNECT_TIMEOUT":
+    case "UND_ERR_HEADERS_TIMEOUT":
+      return new CdekNetworkError(
+        `${host} недоступен по сети (${code ?? "таймаут"}) — проверьте исходящие соединения с сервера хостинга.`,
+        { code, stage: "timeout", host, cause: error }
+      );
+    default:
+      if (code && /CERT|TLS|SSL/i.test(code)) {
+        return new CdekNetworkError(
+          `TLS-рукопожатие с ${host} не удалось (${code}) — возможно, на пути MITM-прокси или неверные дата/время на сервере.`,
+          { code, stage: "tls", host, cause: error }
+        );
+      }
+      return new CdekNetworkError(
+        `Не удалось соединиться с ${host}: ${message}${code ? ` (${code})` : ""}`,
+        { code, stage: "unknown", host, cause: error }
+      );
+  }
 }
 
 /* ---------------- Авторизация и запросы ---------------- */
@@ -494,7 +660,8 @@ async function fetchJson(url: string, init?: RequestInit) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`Превышен таймаут запроса к СДЭК (${REQUEST_TIMEOUT_MS} мс)`);
     }
-    throw error;
+    // Оборачиваем «fetch failed» в понятную сетевую ошибку с хостом и кодом.
+    throw toNetworkError(error, url);
   } finally {
     clearTimeout(timer);
   }
