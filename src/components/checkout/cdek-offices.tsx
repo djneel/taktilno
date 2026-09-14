@@ -100,8 +100,13 @@ export function CdekOfficesPicker({
     if (!error) reportedRef.current = null;
   }, [error, onOfficesError]);
 
-  // Сбрасывать showList при смене выбора не нужно: карточка рисуется
-  // только при selected, без выбора всегда виден список.
+  // Выбор из списка: сворачиваем список обратно в карточку.
+  const handleChoose = (office: CdekOffice) => {
+    setQuery("");
+    setShowList(false);
+    onChoose({ office });
+  };
+
   const trimmedCity = city.trim();
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = normalizedQuery
@@ -123,7 +128,10 @@ export function CdekOfficesPicker({
         </div>
         <button
           type="button"
-          onClick={() => setShowList(true)}
+          onClick={() => {
+            setQuery("");
+            setShowList(true);
+          }}
           className="mt-3 inline-flex h-10 items-center rounded-full bg-bg2 px-4 text-xs font-bold ring-1 ring-line/60 transition-colors hover:text-green"
         >
           Выбрать другой пункт →
@@ -178,7 +186,7 @@ export function CdekOfficesPicker({
             <li key={office.code}>
               <button
                 type="button"
-                onClick={() => onChoose({ office })}
+                onClick={() => handleChoose(office)}
                 aria-pressed={active}
                 className={cn(
                   "w-full rounded-2xl p-4 text-left ring-1 transition-colors",
