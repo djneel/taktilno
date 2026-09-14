@@ -25,6 +25,7 @@ import {
   type CdekPvzChoice,
 } from "./cdek-offices";
 import { RussianPostQuoteInfo, useRussianPostQuote } from "./russian-post-fields";
+import { RussianPostOfficeInfo } from "./russian-post-office";
 
 export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const { items, hydrated, subtotal, clear } = useCart();
@@ -287,6 +288,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
                     error={pochtaError}
                     subtotal={subtotal}
                   />
+                  <RussianPostOfficeInfo postcode={form.postcode} />
                 </>
               )}
               <Input
