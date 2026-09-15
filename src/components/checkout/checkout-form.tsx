@@ -31,7 +31,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
   const { items, hydrated, subtotal, clear } = useCart();
   const [form, setForm] = useState({
     name: "",
-    phone: "",
+    phone: "+7 ",
     email: "",
     city: "",
     deliveryMethod: DELIVERY_METHODS[0].id,
@@ -111,6 +111,11 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
     const innError = validateInn(form.inn);
     if (innError) {
       setError(innError);
+      return;
+    }
+
+    if (form.phone.replace(/\D/g, "").length < 11) {
+      setError("Укажите корректный номер телефона (10 цифр после +7)");
       return;
     }
 
