@@ -6,7 +6,6 @@ import { useState, type FormEvent } from "react";
 import { useCart } from "@/components/cart/cart-context";
 import {
   DELIVERY_METHODS,
-  FIXED_DELIVERY_COST,
   FREE_DELIVERY_THRESHOLD,
   getDeliveryCost,
   isCdek,
@@ -218,8 +217,7 @@ export function CheckoutForm({ onlinePayment }: { onlinePayment: boolean }) {
         <Fieldset title="Получение заказа">
           <div className="rounded-2xl bg-bg2/60 px-4 py-3 text-sm text-muted ring-1 ring-line/60">
             СДЭК — <strong className="text-fg">по тарифу СДЭК</strong> для вашего города,
-            Почта России — по тарифу Почты для вашего индекса,
-            Ozon и Яндекс — {formatPrice(FIXED_DELIVERY_COST)}.
+            Почта России — по тарифу Почты для вашего индекса.
             От {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно. Самовывоз бесплатный при любой сумме.
           </div>
 
