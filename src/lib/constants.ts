@@ -28,7 +28,7 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: "Возврат",
 };
 
-export type DeliveryProvider = "cdek" | "ozon" | "yandex" | "russian_post" | "pickup";
+export type DeliveryProvider = "cdek" | "russian_post" | "pickup";
 
 export type DeliveryMethod = {
   id: string;
@@ -79,28 +79,6 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
     addressLabel: "Адрес пункта выдачи СДЭК",
   },
   {
-    id: "ozon_pvz",
-    provider: "ozon",
-    name: "Ozon — пункт выдачи",
-    description: "Доставка в выбранный пункт Ozon",
-    cost: FIXED_DELIVERY_COST,
-    needsCity: true,
-    needsAddress: true,
-    needsPostcode: false,
-    addressLabel: "Адрес пункта выдачи Ozon",
-  },
-  {
-    id: "yandex_pvz",
-    provider: "yandex",
-    name: "Яндекс Доставка — пункт выдачи",
-    description: "Доставка в выбранный пункт Яндекс Маркета",
-    cost: FIXED_DELIVERY_COST,
-    needsCity: true,
-    needsAddress: true,
-    needsPostcode: false,
-    addressLabel: "Адрес пункта выдачи Яндекс Маркета",
-  },
-  {
     id: "russian_post",
     provider: "russian_post",
     name: "Почта России — отделение",
@@ -128,6 +106,8 @@ export const DELIVERY_METHODS: readonly DeliveryMethod[] = [
 const LEGACY_DELIVERY_METHODS: readonly { id: string; name: string }[] = [
   { id: "post", name: "Почта России — отделение" },
   { id: "courier", name: "Курьер до двери" },
+  { id: "ozon_pvz", name: "Ozon — пункт выдачи" },
+  { id: "yandex_pvz", name: "Яндекс Доставка — пункт выдачи" },
 ];
 
 export function getDeliveryMethod(id: string) {

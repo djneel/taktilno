@@ -18,7 +18,7 @@ export type TrackingLink = {
 
 /**
  * Ссылка на отслеживание по способу доставки заказа.
- * null — служба без публичного трекинга по номеру (Ozon, Яндекс): показываем только номер.
+ * null — способ без публичного трекинга по номеру (архивные способы): показываем только номер.
  */
 export function getTrackingLink(deliveryMethod: string, trackingNumber: string): TrackingLink | null {
   const number = (trackingNumber ?? "").trim();

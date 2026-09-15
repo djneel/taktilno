@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import {
   DELIVERY_METHODS,
-  FIXED_DELIVERY_COST,
   FREE_DELIVERY_THRESHOLD,
   isCdek,
   isRussianPost,
@@ -26,8 +25,8 @@ export default function DeliveryPage() {
       </h1>
       <p className="mt-3 text-muted">Отправляем по всей России в течение 1–3 дней после оплаты.</p>
       <p className="mt-4 text-xl font-bold text-green sm:text-2xl">
-        СДЭК и Почта России — по тарифу для вашего города и индекса, Ozon и Яндекс —{" "}
-        {formatPrice(FIXED_DELIVERY_COST)}, от {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно.
+        СДЭК и Почта России — по тарифу для вашего города и индекса, от{" "}
+        {formatPrice(FREE_DELIVERY_THRESHOLD)} — бесплатно.
       </p>
       <p className="mt-2 text-sm text-muted">Самовывоз в Краснодаре бесплатный при любой сумме заказа.</p>
 
