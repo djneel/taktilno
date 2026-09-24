@@ -27,7 +27,16 @@ function assertDatabaseUrl() {
 function getPool(): Pool {
   if (!globalForDb.__arenaNextJsPostgresqlPool) {
     const url = assertDatabaseUrl();
-    globalForDb.__arenaNextJsPostgresqlPool = new Pool({ connectionString: url });
+    // Внутренний PostgreSQL RelaxDev работает без TLS и доступен только из
+    // внутренней сети: драйвер pg при этом обязан получить явный ssl:false,
+    // иначе параметры sslmode=require / ssl=true из строки подключения роняют
+    // соединение ошибкой «server does not support SSL connections».
+    // Включается переменной DATABASE_SSL=false (см. .env.example).
+    // Внешним базам (Neon и др., где TLS обязателен) переменную не задавайте.
+    const sslDisabled = process.env.DATABASE_SSL === "false" || process.env.PGSSLMODE === "disable";
+    globalForDb.__arenaNextJsPostgresqlPool = sslDisabled
+      ? new Pool({ connectionString: url, ssl: false })
+      : new Pool({ connectionString: url });
   }
   return globalForDb.__arenaNextJsPostgresqlPool;
 }
