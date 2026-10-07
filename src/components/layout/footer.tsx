@@ -39,6 +39,14 @@ export function Footer({ telegram, vk }: { telegram?: string; vk?: string }) {
           <div className="flex flex-col gap-1">
             <span>ИНН 233908290142</span>
             <span>© 2026 ТАКТИЛЬНО</span>
+            <a
+              href="https://relaxdev.ru"
+              target="_blank"
+              rel="noopener"
+              className="transition-colors hover:text-fg"
+            >
+              Размещён на RelaxDev
+            </a>
           </div>
           <Link href="/admin" className="transition-colors hover:text-fg">
             Вход для администратора
