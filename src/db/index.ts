@@ -33,7 +33,7 @@ function getPool(): Pool {
     // соединение ошибкой «server does not support SSL connections».
     // Включается переменной DATABASE_SSL=false (см. .env.example).
     // Внешним базам (Neon и др., где TLS обязателен) переменную не задавайте.
-    const sslDisabled = process.env.DATABASE_SSL === "false" || process.env.PGSSLMODE === "disable";
+    const sslDisabled = process.env.DATABASE_SSL === "false";
     globalForDb.__arenaNextJsPostgresqlPool = sslDisabled
       ? new Pool({ connectionString: url, ssl: false })
       : new Pool({ connectionString: url });

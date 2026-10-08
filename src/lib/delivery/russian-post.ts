@@ -103,14 +103,14 @@ function numEnv(name: string, def: number, min: number, max: number) {
 }
 
 export function getRussianPostConfig(): RussianPostConfig {
-  const fromIndex = (process.env.POCHTA_FROM_INDEX ?? "350000").replace(/\D/g, "") || "350000";
+  const fromIndex = (process.env["POCHTA_FROM_INDEX"] ?? "350000").replace(/\D/g, "") || "350000";
   return {
     fromIndex,
     // По умолчанию «Посылка онлайн» — публичный тарификатор считает её без
     // договора; «Посылка стандарт» (27030) анонимно теперь требует параметр
     // pack и отклоняется, поэтому при недоступности объекта код сам переберёт
     // запасные (см. tariffObjectChain).
-    tariffObject: (process.env.POCHTA_TARIFF_OBJECT ?? "23030").replace(/\D/g, "") || "23030",
+    tariffObject: (process.env["POCHTA_TARIFF_OBJECT"] ?? "23030").replace(/\D/g, "") || "23030",
     defaultItemWeightG: numEnv("POCHTA_DEFAULT_ITEM_WEIGHT_G", 150, 10, 5000),
     packagingWeightG: numEnv("POCHTA_PACKAGING_WEIGHT_G", 150, 0, 5000),
     maxWeightG: numEnv("POCHTA_MAX_WEIGHT_G", 20_000, 1000, 31_500),
@@ -119,7 +119,7 @@ export function getRussianPostConfig(): RussianPostConfig {
 
 /** Доступ к API «Отправка» по договору (токен + ключ) настроен. */
 export function isOtpravkaConfigured() {
-  return Boolean(process.env.POCHTA_TOKEN?.trim() && process.env.POCHTA_KEY?.trim());
+  return Boolean(process.env["POCHTA_TOKEN"]?.trim() && process.env["POCHTA_KEY"]?.trim());
 }
 
 /* ---------------- Индексы и трек-номера ---------------- */
@@ -428,8 +428,8 @@ async function quoteViaOtpravka(
   weightGrams: number,
   config: RussianPostConfig
 ): Promise<RussianPostQuote> {
-  const token = process.env.POCHTA_TOKEN!.trim();
-  const key = process.env.POCHTA_KEY!.trim();
+  const token = process.env["POCHTA_TOKEN"]!.trim();
+  const key = process.env["POCHTA_KEY"]!.trim();
   const data = await fetchJson(`${OTPRAVKA_API}/tariff`, {
     method: "POST",
     headers: {
@@ -496,8 +496,8 @@ export async function normalizeAddressViaOtpravka(
   const original = address.trim();
   if (!original) return null;
   try {
-    const token = process.env.POCHTA_TOKEN!.trim();
-    const key = process.env.POCHTA_KEY!.trim();
+    const token = process.env["POCHTA_TOKEN"]!.trim();
+    const key = process.env["POCHTA_KEY"]!.trim();
     const data = (await fetchJson(`${OTPRAVKA_API}/clean/address`, {
       method: "POST",
       headers: {
