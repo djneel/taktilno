@@ -149,7 +149,7 @@ function numEnv(name: string, def: number, min: number, max: number) {
 }
 
 export function getCdekConfig(): CdekConfig {
-  const cityCode = Number(process.env.CDEK_FROM_CITY_CODE);
+  const cityCode = Number(process.env["CDEK_FROM_CITY_CODE"]);
   return {
     account: process.env.CDEK_ACCOUNT?.trim() ?? "",
     secret: process.env.CDEK_SECRET?.trim() ?? "",
