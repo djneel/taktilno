@@ -38,7 +38,7 @@ import { FIXED_DELIVERY_COST } from "@/lib/constants";
 export type CdekQuoteSource = "api" | "fallback";
 
 /** Почему не удалось посчитать живой тариф (для админки и диагностики). */
-export type CdekFallbackReason = "not-configured" | "weight-limit" | "api-error";
+export type CdekFallbackReason = "not-configured" | "weight-limit" | "api-error" | "city-not-found";
 
 export type CdekQuote = {
   /** Стоимость доставки в рублях (округлённо). */
@@ -279,17 +279,21 @@ export async function getCdekQuote(opts: {
     return cached.value;
   }
 
+  // Город не сопоставлен реестру (нет кода и индекса) — подскажем покупателю
+  // уточнить название, а не «сайт недоступен» (см. cdekFallbackNote).
+  let cityResolved = true;
   try {
     const location = await resolveDestination(
       { city, address: opts.address, postcode, cityCode: opts.cityCode },
       config
     );
+    cityResolved = location.code !== undefined || location.postal_code !== undefined;
     const quote = await quoteViaTariff(location, weightGrams, config);
     putCache(quoteCache, cacheKey, quote, false);
     return quote;
   } catch (error) {
     console.error("[cdek] tariff request failed, using fallback:", formatCdekError(error));
-    const quote = fallbackQuote(weightGrams, "api-error", formatCdekError(error));
+    const quote = fallbackQuote(weightGrams, cityResolved ? "api-error" : "city-not-found", formatCdekError(error));
     putCache(quoteCache, cacheKey, quote, true);
     return quote;
   }
