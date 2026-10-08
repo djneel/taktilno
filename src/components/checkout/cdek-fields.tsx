@@ -14,7 +14,7 @@ export type CdekQuoteDto = {
   maxDays?: number;
   source: "api" | "fallback";
   fallback: boolean;
-  reason?: "not-configured" | "weight-limit" | "api-error";
+  reason?: "not-configured" | "weight-limit" | "api-error" | "city-not-found";
   weightGrams: number;
   configured: boolean;
 };
@@ -37,6 +37,8 @@ function cdekFallbackNote(reason?: CdekQuoteDto["reason"]) {
       return " · посылка тяжелее лимита онлайн-расчёта, тариф уточним при оформлении";
     case "not-configured":
       return " · тариф СДЭК уточним при оформлении, ориентир — стандартный";
+    case "city-not-found":
+      return " · не нашли город у СДЭК — уточните полное название";
     default:
       return " · сайт СДЭК недоступен, взят стандартный тариф";
   }
