@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { HomeMascot } from "@/components/home/mascot";
 import {
   getFeaturedProducts,
   getHomeCategories,
@@ -55,7 +54,6 @@ export default async function HomePage() {
       <Process images={getProcessImages(settings)} />
       <Reviews reviews={reviews} />
       <FinalCta />
-      <HomeMascot />
     </>
   );
 }
