@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Mascot } from "page-mascot";
+import { HomeMascot } from "@/components/home/mascot";
 import {
   getFeaturedProducts,
   getHomeCategories,
@@ -55,12 +55,7 @@ export default async function HomePage() {
       <Process images={getProcessImages(settings)} />
       <Reviews reviews={reviews} />
       <FinalCta />
-      <Mascot
-        directions="/mascots/cat-directions.png"
-        reactions="/mascots/cat-reactions.png"
-        size={140}
-        label="Котик-маскота ТАКТИЛЬНО"
-      />
+      <HomeMascot />
     </>
   );
 }
